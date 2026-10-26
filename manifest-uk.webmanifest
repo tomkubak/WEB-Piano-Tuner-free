@@ -1,0 +1,23 @@
+{
+  "name": "Тюнер для фортепіано",
+  "short_name": "Тюнер",
+  "description": "Звук із мікрофона обробляється лише на цьому пристрої й нікуди не надсилається.",
+  "lang": "uk",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1b120c",
+  "theme_color": "#1b120c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

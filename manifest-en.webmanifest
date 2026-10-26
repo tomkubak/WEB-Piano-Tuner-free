@@ -1,0 +1,23 @@
+{
+  "name": "Piano Tuner",
+  "short_name": "Piano Tuner",
+  "description": "Microphone audio is processed only on this device and is never sent anywhere.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1b120c",
+  "theme_color": "#1b120c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

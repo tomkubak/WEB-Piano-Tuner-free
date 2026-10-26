@@ -1,0 +1,23 @@
+{
+  "name": "Afinador de piano",
+  "short_name": "Afinador",
+  "description": "El sonido del micrófono se procesa solo en este dispositivo y nunca se envía a ningún sitio.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1b120c",
+  "theme_color": "#1b120c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

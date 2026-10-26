@@ -1,0 +1,23 @@
+{
+  "name": "Klavírna ladička",
+  "short_name": "Ladička",
+  "description": "Zvuk z mikrofónu sa spracúva len v tomto zariadení a nikam sa neodosiela.",
+  "lang": "sk",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1b120c",
+  "theme_color": "#1b120c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

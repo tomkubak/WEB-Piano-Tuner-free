@@ -1,0 +1,2043 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ladička">
+<meta name="theme-color" content="#1b120c">
+<meta name="description" content="Free piano tuner in your browser: stretch tuning from measured inharmonicity, partial strobe and historical temperaments. Works offline; audio never leaves your device.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Piano Tuner · Klavírní ladička">
+<meta property="og:description" content="Free piano tuner in your browser: stretch tuning from measured inharmonicity, partial strobe and historical temperaments.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<!-- ARTIFACT:BEGIN -->
+<title>Klavírní ladička</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Rozvržení: jeden přístroj v úzkém sloupci. Mosazný ciferník nahoře, nixie displej, stroboskop a tlačítka pod ním,
+   graf v mosazném rámu, nastavení v kožené kazetě. Na širokém okně je kazeta vpravo. */
+:root {
+  color-scheme: dark;
+  --walnut: #1b120c;      /* podklad: ořechové dřevo */
+  --leather: #2a1a10;     /* kazeta s nastavením */
+  --brass: #c9a157;       /* kov a akcent */
+  --brass-hi: #f3d896;
+  --brass-lo: #7c561d;
+  --parchment: #ecdcb8;   /* text */
+  --muted: #a99069;
+  --line: #45301f;
+  --ink: #2a190b;         /* rytina na ciferníku */
+  --ink-soft: #6b4a28;
+  --ok: #63a88c;          /* měděnka: naladěno */
+  --bad: #a63b2f;         /* rozladěno */
+  --glow: #ffae52;        /* nixie */
+  --err: #f0a08e;
+  --font-display: "Old Standard TT", "Iowan Old Style", Palatino, Georgia, serif;
+  --font-engrave: "Cinzel", "Trajan Pro", "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--walnut);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  padding-block: 10px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  color: var(--parchment);
+  font: 17px/1.35 var(--font-display);
+  background:
+    radial-gradient(130% 55% at 50% 0%, rgba(201, 161, 87, .15), transparent 65%),
+    repeating-linear-gradient(97deg, rgba(0, 0, 0, .06) 0 3px, transparent 3px 7px, rgba(255, 235, 200, .018) 7px 9px, transparent 9px 14px),
+    var(--walnut);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+.app { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.instrument { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* Široké okno (Mac): přístroj vlevo, kazeta s nastavením vpravo */
+@media (min-width: 860px) {
+  .app { max-width: 940px; display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 36px; align-items: start; padding-top: 8px; }
+  .case { margin-top: 6px; }
+  #chart { height: 200px; }
+}
+
+/* Ciferník */
+.gauge svg { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 1 / 1; }
+.dl { font: 400 14px var(--font-display); fill: var(--ink); }
+.ds { font: 700 22px var(--font-display); fill: var(--ink); }
+.de { font: 500 9.5px var(--font-engrave); letter-spacing: 3px; fill: var(--ink-soft); }
+.dn { font: 700 54px var(--font-display); fill: var(--ink); transition: opacity .25s; }
+.do { font-size: 22px; font-weight: 400; fill: var(--ink-soft); }
+
+/* Nixie displej s odchylkou */
+.readout { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: -4px; }
+.nixie {
+  position: relative; min-width: 8.5ch; padding: 5px 18px 3px; border-radius: 10px;
+  font: 500 34px/1.15 var(--font-mono); letter-spacing: .03em; text-align: center; font-variant-numeric: tabular-nums;
+  color: var(--glow);
+  text-shadow: 0 0 2px var(--glow), 0 0 10px rgba(255, 128, 32, .8), 0 0 22px rgba(255, 110, 20, .35);
+  background: radial-gradient(120% 140% at 50% 20%, #2b1608, #0b0503 72%);
+  box-shadow: 0 0 0 2px #120a04, 0 0 0 4px var(--brass-lo), 0 0 0 5px var(--brass), inset 0 0 16px rgba(0, 0, 0, .9), 0 6px 14px rgba(0, 0, 0, .55);
+  transition: opacity .25s;
+}
+.nixie::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .28) 0 1px, transparent 1px 3px),
+              repeating-linear-gradient(90deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px);
+}
+.nixie.off { color: #553520; text-shadow: none; }
+.nixie.dim { opacity: .5; }
+.hz { min-height: 1.35em; font-style: italic; font-size: 15px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Stroboskop: kotouče jednotlivých parciálů */
+.strobe { display: block; width: 100%; height: 78px; }
+
+/* Mosazná tlačítka */
+.btn {
+  appearance: none; -webkit-appearance: none; margin: 0;
+  border: 1px solid #3a2709; border-radius: 10px; padding: 11px 8px;
+  font: 700 16px/1.1 var(--font-display); color: var(--ink); letter-spacing: .02em;
+  background: linear-gradient(180deg, var(--brass-hi) 0%, var(--brass) 45%, var(--brass-lo) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 225, .6), inset 0 -2px 3px rgba(70, 40, 5, .45), 0 2px 5px rgba(0, 0, 0, .55);
+  text-shadow: 0 1px 0 rgba(255, 240, 205, .5);
+  touch-action: manipulation; cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.btn:active { transform: translateY(1px); box-shadow: inset 0 2px 5px rgba(70, 40, 5, .6), 0 1px 2px rgba(0, 0, 0, .5); }
+.btn:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+.btn[disabled] { opacity: .55; }
+.btn.on { background: linear-gradient(180deg, #a8dcc5 0%, var(--ok) 50%, #2d6750 100%); color: #0d241a; text-shadow: 0 1px 0 rgba(220, 255, 240, .4); }
+.btn.warn { background: linear-gradient(180deg, #e3907a 0%, var(--bad) 52%, #5a1912 100%); color: #fdeee4; text-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+.nav { display: grid; grid-template-columns: 1fr 1.45fr 1.45fr 1fr; gap: 8px; }
+.nav .btn { font-size: 15px; line-height: 1.1; padding-inline: 4px; overflow-wrap: anywhere; }
+.msg { margin: 0; text-align: center; font-size: 15px; color: var(--err); text-wrap: balance; }
+
+/* Graf v mosazném rámu: spektrum, křivka ladění, inharmonicita */
+.scope { display: flex; flex-direction: column; gap: 5px; padding: 5px; border-radius: 12px; background: linear-gradient(180deg, var(--brass) 0%, var(--brass-lo) 100%); box-shadow: inset 0 1px 0 rgba(255, 248, 225, .5), 0 3px 8px rgba(0, 0, 0, .55); }
+.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.tab {
+  appearance: none; -webkit-appearance: none; margin: 0; padding: 7px 4px 6px; border-radius: 7px; border: 1px solid #3a2709;
+  font: 700 11px/1.15 var(--font-engrave); letter-spacing: .05em; text-transform: uppercase; color: var(--ink); overflow-wrap: anywhere; hyphens: auto; -webkit-hyphens: auto;
+  background: linear-gradient(180deg, var(--brass-hi), var(--brass) 55%, var(--brass-lo));
+  box-shadow: inset 0 1px 0 rgba(255, 248, 225, .55); cursor: pointer; touch-action: manipulation;
+}
+.tab[aria-selected="true"] { color: var(--glow); background: radial-gradient(120% 160% at 50% 0%, #2b1608, #0b0503 75%); box-shadow: inset 0 0 8px rgba(0, 0, 0, .9); text-shadow: 0 0 6px rgba(255, 128, 32, .7); }
+.tab:focus-visible { outline: 2px solid var(--glow); outline-offset: 1px; }
+#chart { display: block; width: 100%; height: 150px; border-radius: 8px; background: radial-gradient(130% 120% at 50% 0%, #1a0f06, #070402 75%); box-shadow: inset 0 0 12px rgba(0, 0, 0, .9); }
+
+/* Kazeta s nastavením */
+.case {
+  padding: 4px 16px 10px; border-radius: 14px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, #2d1c11, var(--leather) 40%, #21140b);
+  box-shadow: inset 0 0 0 1px rgba(243, 216, 150, .05), inset 0 12px 26px rgba(0, 0, 0, .35), 0 4px 12px rgba(0, 0, 0, .5);
+}
+.case h2 { margin: 16px 0 4px; font: 700 13px/1.2 var(--font-engrave); letter-spacing: .16em; color: var(--brass); text-transform: uppercase; text-wrap: balance; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 6px 0; border-top: 1px solid var(--line); }
+.row > label, .row > .lbl { min-width: 0; overflow-wrap: anywhere; hyphens: auto; -webkit-hyphens: auto; }
+.val { color: var(--brass-hi); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sub { display: block; font-size: 14px; font-style: italic; color: var(--muted); }
+.row.muted { opacity: .45; }
+select {
+  appearance: none; -webkit-appearance: none; max-width: 58%; padding: 8px 30px 8px 10px;
+  border: 1px solid var(--brass-lo); border-radius: 8px; font: 17px var(--font-display); color: var(--parchment);
+  background: #160d07 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23c9a157'/%3E%3C/svg%3E") no-repeat right 10px center / 10px 6px;
+}
+select:disabled { opacity: .45; }
+input[type="range"] { width: 42%; max-width: 170px; margin: 0; accent-color: var(--brass); }
+input[type="checkbox"] { width: 24px; height: 24px; margin: 0; flex: none; accent-color: var(--ok); }
+select:focus-visible, input:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper .btn { width: 40px; height: 38px; padding: 0; font-size: 20px; }
+.stepper output { min-width: 5.6em; text-align: center; font-variant-numeric: tabular-nums; color: var(--brass-hi); }
+.small-btn { padding: 8px 12px; font-size: 15px; flex: none; }
+.privacy { margin: 18px 0 6px; font-size: 14px; font-style: italic; color: var(--muted); text-wrap: balance; }
+@media (prefers-reduced-motion: reduce) { .nixie, .dn { transition: none; } }
+</style>
+</head>
+<body>
+<main class="app" id="app">
+  <div class="instrument">
+    <div class="gauge"><svg id="dial" viewBox="-180 -180 360 360" role="img" data-i18n-aria="aDial"></svg></div>
+
+    <div class="readout">
+      <div class="nixie off" id="cents">– –</div>
+      <div class="hz" id="freq">…</div>
+    </div>
+
+    <canvas class="strobe" id="strobe" role="img" data-i18n-aria="aStrobe"></canvas>
+
+    <div class="nav">
+      <button class="btn" id="prev" type="button" data-i18n-aria="aPrev">◀&#xFE0E;</button>
+      <button class="btn" id="mode" type="button" data-i18n-aria="aMode">Auto</button>
+      <button class="btn" id="tone" type="button" data-i18n="tone">♪</button>
+      <button class="btn" id="next" type="button" data-i18n-aria="aNext">▶&#xFE0E;</button>
+    </div>
+    <p class="msg" id="msg" hidden></p>
+
+    <div class="scope">
+      <div class="tabs" role="tablist" data-i18n-aria="aChart">
+        <button class="tab" role="tab" id="tab-spec" data-chart="spec" type="button" data-i18n="tabSpec"></button>
+        <button class="tab" role="tab" id="tab-curve" data-chart="curve" type="button" data-i18n="tabCurve"></button>
+        <button class="tab" role="tab" id="tab-inh" data-chart="inh" type="button" data-i18n="tabInh"></button>
+      </div>
+      <canvas id="chart" role="img"></canvas>
+    </div>
+  </div>
+
+  <section class="case" data-i18n-aria="aSettings">
+    <h2 data-i18n="hView"></h2>
+    <div class="row"><label for="lang" id="langLbl"></label><select id="lang"></select></div>
+    <div class="row"><label for="names" data-i18n="names"></label><select id="names"></select></div>
+
+    <h2 data-i18n="hTuning"></h2>
+    <div class="row"><label for="temp" data-i18n="temperament"></label><select id="temp"></select></div>
+    <div class="row"><label for="tonic" data-i18n="tonic"></label><select id="tonic"></select></div>
+    <div class="row"><span class="lbl" id="refLbl"></span>
+      <div class="stepper"><button class="btn" id="aMinus" type="button" data-i18n-aria="aDown">−</button><output id="aVal"></output><button class="btn" id="aPlus" type="button" data-i18n-aria="aUp">+</button></div>
+    </div>
+
+    <h2 data-i18n="hStretch"></h2>
+    <div class="row"><label for="stretchOn"><span data-i18n="stretchOn"></span><span class="sub" id="stretchSub"></span></label><input type="checkbox" id="stretchOn"></div>
+    <div class="row" id="rowStyle"><label for="style" data-i18n="style"></label><select id="style"></select></div>
+    <div class="row" id="rowTreb"><label for="xTreb"><span data-i18n="xTreb"></span> <span class="val" id="xtv"></span><span class="sub" id="xTrebSub"></span></label><input type="range" id="xTreb" min="-10" max="20" step="1"></div>
+    <div class="row" id="rowBass"><label for="xBass"><span data-i18n="xBass"></span> <span class="val" id="xbv"></span><span class="sub" id="xBassSub"></span></label><input type="range" id="xBass" min="-20" max="10" step="1"></div>
+
+    <h2 data-i18n="hInh"></h2>
+    <div class="row"><label for="measOn"><span data-i18n="measOn"></span><span class="sub" id="measHint"></span></label><input type="checkbox" id="measOn"></div>
+    <div class="row"><span class="lbl"><span id="mc"></span><span class="sub" id="mlast"></span></span><button class="btn small-btn" id="measReset" type="button" data-i18n="del"></button></div>
+    <div class="row"><label for="wMeas"><span data-i18n="wMeas"></span> <span class="val" id="wmv"></span><span class="sub" data-i18n="wMeasSub"></span></label><input type="range" id="wMeas" min="0" max="1" step="0.05"></div>
+    <div class="row"><span class="lbl"><span data-i18n="tunedLbl"></span><span class="sub" id="tunedSub"></span></span><button class="btn small-btn" id="tunedReset" type="button" data-i18n="del"></button></div>
+
+    <h2 data-i18n="hNeedle"></h2>
+    <div class="row"><label for="strobeOn" data-i18n="strobeOn"></label><input type="checkbox" id="strobeOn"></div>
+    <div class="row"><label for="smooth" data-i18n="smooth"></label><input type="range" id="smooth" min="0" max="1" step="0.05"></div>
+    <div class="row"><label for="zoomOn" data-i18n="zoom"></label><input type="checkbox" id="zoomOn"></div>
+    <div class="row"><label for="sens"><span data-i18n="sens"></span> <span class="val" id="sv"></span></label><input type="range" id="sens" min="1" max="5" step="0.5"></div>
+    <div class="row"><label for="hold"><span data-i18n="hold"></span> <span class="val" id="hv"></span></label><input type="range" id="hold" min="0.5" max="6" step="0.5"></div>
+
+    <h2 data-i18n="hCompute"></h2>
+    <div class="row"><label for="hiOn"><span data-i18n="hiOn"></span><span class="sub" id="hiSub"></span></label><input type="checkbox" id="hiOn"></div>
+    <p class="privacy" data-i18n="privacy"></p>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ---------- Temperamenty (odchylky v centech od rovnoměrné, index 0 = tónika) ----------
+// Spočítané z definic: které kvinty se zužují a o kolik (PK = pythagorejské, SK = syntonické koma).
+const TEMPS = [
+  ["eq", "tEqual", "", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+  ["pyth", "tPyth", "", [0, 13.69, 3.91, -5.87, 7.82, -1.96, 11.73, 1.96, 15.64, 5.87, -3.91, 9.78]],           // čisté kvinty E♭–G♯
+  ["just", "tJust", "", [0, 11.73, 3.91, 15.64, -13.69, -1.96, -9.78, 1.96, 13.69, -15.64, 17.6, -11.73]],
+  ["mean", "tMean", "", [0, -23.95, -6.84, 10.26, -13.69, 3.42, -20.53, -3.42, -27.37, -10.26, 6.84, -17.11]],  // kvinty E♭–G♯ o ¼ SK
+  ["werck3", "", "Werckmeister III", [0, -9.78, -7.82, -5.87, -9.78, -1.96, -11.73, -3.91, -7.82, -11.73, -3.91, -7.82]],
+  ["kirn3", "", "Kirnberger III", [0, -9.78, -6.84, -5.87, -13.69, -1.96, -9.78, -3.42, -7.82, -10.26, -3.91, -11.73]],
+  ["kellner", "", "Kellner", [0, -9.78, -5.47, -5.87, -10.95, -1.96, -11.73, -2.74, -7.82, -8.21, -3.91, -8.99]],
+  ["vallotti", "", "Vallotti", [0, -5.87, -3.91, -1.96, -7.82, 1.96, -7.82, -1.96, -3.91, -5.87, 0, -9.78]],
+  ["young2", "", "Young II", [0, -9.78, -3.91, -5.87, -7.82, -1.96, -11.73, -1.96, -7.82, -5.87, -3.91, -9.78]],
+];
+const tempById = id => TEMPS.find(t => t[0] === id) || TEMPS[0];
+
+// ---------- Jazyky ----------
+const LANGS = [["cs", "Čeština"], ["sk", "Slovenčina"], ["pl", "Polski"], ["de", "Deutsch"], ["en", "English"], ["fr", "Français"],
+               ["es", "Español"], ["it", "Italiano"], ["pt", "Português"], ["nl", "Nederlands"], ["uk", "Українська"], ["ru", "Русский"],
+               ["ja", "日本語"], ["zh", "中文"]];
+const I18N = {
+cs: {
+  appName: "Klavírní ladička", appShort: "Ladička",
+  listening: "Poslouchám", waitingTap: "Čekám na klepnutí", startingMic: "Spouštím mikrofon", micOff: "Mikrofon je vypnutý",
+  msgPreview: "V tomto náhledu prohlížeč mikrofon nepovolí. Otevři ladičku na její vlastní adrese.",
+  msgNoMic: "Nenašel jsem žádný mikrofon.",
+  msgDenied: "Mikrofon není povolený. Povol ho pro tuto stránku v nastavení prohlížeče a klepni kamkoli.",
+  msgAudioFail: "Zvuk se nepodařilo spustit. Obnov stránku.",
+  msgTap: "Klepni kamkoli a ladička začne poslouchat.",
+  aDial: "Měřič odchylky ladění v centech",
+  aStrobe: "Stroboskop parciálů: kotouč se točí doprava, když je parciál vysoko, doleva, když je nízko",
+  aPrev: "O půltón níž", aNext: "O půltón výš", aMode: "Volba noty", aChart: "Graf", aSettings: "Nastavení", aDown: "Snížit", aUp: "Zvýšit",
+  modeAuto: "Auto", modeStep: "Krokově", modeLock: "Zamčeno", tone: "♪ Tón",
+  tabSpec: "Spektrum", tabCurve: "Křivka", tabInh: "Inharmonicita",
+  aSpec: "Spektrum zvuku", aCurve: "Křivka ladění: odchylka cílů od rovnoměrného ladění a body naladěných not", aInh: "Inharmonicita strun po klaviatuře",
+  hView: "Zobrazení", hTuning: "Ladění", hStretch: "Stretch", hInh: "Inharmonicita", hNeedle: "Ručička", hCompute: "Výpočet",
+  lang: "Jazyk", names: "Názvy not", temperament: "Temperament", tonic: "Tónika", refA: "Ladicí tón {a4}",
+  tEqual: "Rovnoměrná", tPyth: "Pythagorejská", tJust: "Čistá (5-limit)", tMean: "Středotónová ¼ koma",
+  stretchOn: "Stretch ladění", stretchOff: "Vypnuto: přesně podle temperamentu",
+  stretchTypical: "Podle typického pianina, změř klavír pro přesnost", stretchMeasured: "Podle inharmonicity změřené na tvém klavíru ({n})",
+  style: "Styl", st0: "Vyvážený · čisté duodecimy 3:1", st1: "Malý · čisté oktávy 2:1", st2: "Střední · dvojité oktávy 4:1", st3: "Velký · čisté 19 (6:1)",
+  xTreb: "Navíc ve výškách", xTrebSub: "Odchylka na {c8}, náběh přes horních 16 not",
+  xBass: "Navíc v basech", xBassSub: "Odchylka na {a0}, náběh přes spodních 16 not",
+  measOn: "Měřit inharmonicitu", measHint: "Změř aspoň 7 not od {lo} po {hi}, třeba všechna {a} a {ds}",
+  measCount: "Změřené noty: {n}", mLast: "Naposledy {note} · B {b}", mFit: "Křivka se proloží změřenými notami", mNone: "Zatím platí typické pianino",
+  del: "Smazat", sure: "Opravdu?",
+  wMeas: "Váha měření", wMeasSub: "Méně = hladší křivka, víc = věrnější tvému klavíru",
+  tunedLbl: "Body v grafu křivky", tunedN: "Noty s bodem: {n}", tuned0: "Ukazují, jak je která nota naladěná",
+  strobeOn: "Stroboskop parciálů", smooth: "Vyhlazení", zoom: "Zvětšený střed stupnice", sens: "Citlivost mikrofonu", hold: "Držení hodnoty",
+  hiOn: "Vyšší přesnost", hiSub: "Basy z delšího úseku a víc parciálů, v každém snímku", hiAuto: "na počítači zapnutá sama", hiBattery: "v telefonu víc vybíjí baterii",
+  chartStretch: "Stretch · {style}", chartNoStretch: "Bez stretche (rovnoměrně)",
+  chartInhN: "Měřené noty: {n} · čára = proložená křivka", chartInh0: "Zatím nic změřeno · typické pianino",
+  cents: "CENTY", privacy: "Zvuk z mikrofonu se zpracovává jen v tomto zařízení a nikam se neodesílá."
+},
+sk: {
+  appName: "Klavírna ladička", appShort: "Ladička",
+  listening: "Počúvam", waitingTap: "Čakám na ťuknutie", startingMic: "Spúšťam mikrofón", micOff: "Mikrofón je vypnutý",
+  msgPreview: "V tomto náhľade prehliadač mikrofón nepovolí. Otvor ladičku na jej vlastnej adrese.",
+  msgNoMic: "Nenašiel som žiadny mikrofón.",
+  msgDenied: "Mikrofón nie je povolený. Povoľ ho pre túto stránku v nastaveniach prehliadača a ťukni kamkoľvek.",
+  msgAudioFail: "Zvuk sa nepodarilo spustiť. Obnov stránku.",
+  msgTap: "Ťukni kamkoľvek a ladička začne počúvať.",
+  aDial: "Merač odchýlky ladenia v centoch",
+  aStrobe: "Stroboskop parciálov: kotúč sa točí doprava, keď je parciál vysoko, doľava, keď je nízko",
+  aPrev: "O poltón nižšie", aNext: "O poltón vyššie", aMode: "Voľba noty", aChart: "Graf", aSettings: "Nastavenia", aDown: "Znížiť", aUp: "Zvýšiť",
+  modeAuto: "Auto", modeStep: "Krokovo", modeLock: "Zamknuté", tone: "♪ Tón",
+  tabSpec: "Spektrum", tabCurve: "Krivka", tabInh: "Inharmonicita",
+  aSpec: "Spektrum zvuku", aCurve: "Krivka ladenia: odchýlka cieľov od rovnomerného ladenia a body naladených nôt", aInh: "Inharmonicita strún po klaviatúre",
+  hView: "Zobrazenie", hTuning: "Ladenie", hStretch: "Stretch", hInh: "Inharmonicita", hNeedle: "Ručička", hCompute: "Výpočet",
+  lang: "Jazyk", names: "Názvy nôt", temperament: "Temperament", tonic: "Tónika", refA: "Ladiaci tón {a4}",
+  tEqual: "Rovnomerná", tPyth: "Pytagorejská", tJust: "Čistá (5-limit)", tMean: "Stredotónová ¼ koma",
+  stretchOn: "Stretch ladenia", stretchOff: "Vypnuté: presne podľa temperamentu",
+  stretchTypical: "Podľa typického pianína, zmeraj klavír pre presnosť", stretchMeasured: "Podľa inharmonicity nameranej na tvojom klavíri ({n})",
+  style: "Štýl", st0: "Vyvážený · čisté duodecimy 3:1", st1: "Malý · čisté oktávy 2:1", st2: "Stredný · dvojité oktávy 4:1", st3: "Veľký · čisté 19 (6:1)",
+  xTreb: "Navyše vo výškach", xTrebSub: "Odchýlka na {c8}, nábeh cez horných 16 nôt",
+  xBass: "Navyše v basoch", xBassSub: "Odchýlka na {a0}, nábeh cez spodných 16 nôt",
+  measOn: "Merať inharmonicitu", measHint: "Zmeraj aspoň 7 nôt od {lo} po {hi}, napríklad všetky {a} a {ds}",
+  measCount: "Namerané noty: {n}", mLast: "Naposledy {note} · B {b}", mFit: "Krivka sa preloží nameranými notami", mNone: "Zatiaľ platí typické pianíno",
+  del: "Zmazať", sure: "Naozaj?",
+  wMeas: "Váha merania", wMeasSub: "Menej = hladšia krivka, viac = vernejšia tvojmu klavíru",
+  tunedLbl: "Body v grafe krivky", tunedN: "Noty s bodom: {n}", tuned0: "Ukazujú, ako je ktorá nota naladená",
+  strobeOn: "Stroboskop parciálov", smooth: "Vyhladenie", zoom: "Zväčšený stred stupnice", sens: "Citlivosť mikrofónu", hold: "Držanie hodnoty",
+  hiOn: "Vyššia presnosť", hiSub: "Basy z dlhšieho úseku a viac parciálov, v každom kroku", hiAuto: "na počítači zapnutá sama", hiBattery: "v telefóne viac vybíja batériu",
+  chartStretch: "Stretch · {style}", chartNoStretch: "Bez stretchu (rovnomerne)",
+  chartInhN: "Namerané noty: {n} · čiara = preložená krivka", chartInh0: "Zatiaľ nič nenamerané · typické pianíno",
+  cents: "CENTY", privacy: "Zvuk z mikrofónu sa spracúva len v tomto zariadení a nikam sa neodosiela."
+},
+pl: {
+  appName: "Stroik do fortepianu", appShort: "Stroik",
+  listening: "Słucham", waitingTap: "Czekam na dotknięcie", startingMic: "Uruchamiam mikrofon", micOff: "Mikrofon jest wyłączony",
+  msgPreview: "Ten podgląd nie pozwala na użycie mikrofonu. Otwórz stroik pod jego własnym adresem.",
+  msgNoMic: "Nie znaleziono mikrofonu.",
+  msgDenied: "Dostęp do mikrofonu jest zablokowany. Zezwól na niego dla tej strony w ustawieniach przeglądarki i dotknij ekranu.",
+  msgAudioFail: "Nie udało się uruchomić dźwięku. Odśwież stronę.",
+  msgTap: "Dotknij ekranu, aby zacząć słuchać.",
+  aDial: "Wskaźnik odchylenia stroju w centach",
+  aStrobe: "Stroboskop alikwotów: tarcza obraca się zgodnie z ruchem wskazówek zegara, gdy alikwot jest za wysoko, a przeciwnie, gdy jest za nisko",
+  aPrev: "Pół tonu niżej", aNext: "Pół tonu wyżej", aMode: "Wybór dźwięku", aChart: "Wykres", aSettings: "Ustawienia", aDown: "Obniż", aUp: "Podwyższ",
+  modeAuto: "Auto", modeStep: "Krokowo", modeLock: "Blokada", tone: "♪ Ton",
+  tabSpec: "Widmo", tabCurve: "Krzywa", tabInh: "Nieharmoniczność",
+  aSpec: "Widmo dźwięku", aCurve: "Krzywa strojenia: odchylenie celów od stroju równomiernego i punkty nastrojonych dźwięków", aInh: "Nieharmoniczność strun na całej klawiaturze",
+  hView: "Wyświetlanie", hTuning: "Strojenie", hStretch: "Rozciągnięcie", hInh: "Nieharmoniczność", hNeedle: "Wskazówka", hCompute: "Obliczenia",
+  lang: "Język", names: "Nazwy dźwięków", temperament: "Temperacja", tonic: "Tonika", refA: "Dźwięk wzorcowy {a4}",
+  tEqual: "Równomierna", tPyth: "Pitagorejska", tJust: "Czysta (limit 5)", tMean: "Średniotonowa ¼ komatu",
+  stretchOn: "Rozciągnięty strój", stretchOff: "Wyłączone: dokładnie według temperacji",
+  stretchTypical: "Według typowego pianina; zmierz swój instrument, aby było dokładniej", stretchMeasured: "Według nieharmoniczności zmierzonej na twoim instrumencie ({n})",
+  style: "Styl", st0: "Zrównoważony · czyste duodecymy 3:1", st1: "Mały · czyste oktawy 2:1", st2: "Średni · podwójne oktawy 4:1", st3: "Duży · czyste 6:1",
+  xTreb: "Dodatkowo w diskancie", xTrebSub: "Odchylenie na {c8}, rozłożone na 16 najwyższych dźwięków",
+  xBass: "Dodatkowo w basie", xBassSub: "Odchylenie na {a0}, rozłożone na 16 najniższych dźwięków",
+  measOn: "Mierz nieharmoniczność", measHint: "Zmierz co najmniej 7 dźwięków od {lo} do {hi}, np. wszystkie {a} i {ds}",
+  measCount: "Zmierzone dźwięki: {n}", mLast: "Ostatnio {note} · B {b}", mFit: "Krzywa jest dopasowana do zmierzonych dźwięków", mNone: "Na razie obowiązuje typowe pianino",
+  del: "Usuń", sure: "Na pewno?",
+  wMeas: "Waga pomiarów", wMeasSub: "Mniej = gładsza krzywa, więcej = wierniej twojemu instrumentowi",
+  tunedLbl: "Punkty na wykresie krzywej", tunedN: "Dźwięki z punktem: {n}", tuned0: "Pokazują, jak nastrojony jest każdy dźwięk",
+  strobeOn: "Stroboskop alikwotów", smooth: "Wygładzanie", zoom: "Powiększony środek skali", sens: "Czułość mikrofonu", hold: "Przytrzymanie odczytu",
+  hiOn: "Wyższa dokładność", hiSub: "Bas z dłuższego odcinka i więcej alikwotów, w każdym kroku", hiAuto: "na komputerze włączona automatycznie", hiBattery: "w telefonie zużywa więcej baterii",
+  chartStretch: "Rozciągnięcie · {style}", chartNoStretch: "Bez rozciągnięcia (równomiernie)",
+  chartInhN: "Zmierzone dźwięki: {n} · linia = dopasowana krzywa", chartInh0: "Jeszcze nic nie zmierzono · typowe pianino",
+  cents: "CENTY", privacy: "Dźwięk z mikrofonu jest przetwarzany tylko na tym urządzeniu i nigdzie nie jest wysyłany."
+},
+de: {
+  appName: "Klavierstimmgerät", appShort: "Stimmgerät",
+  listening: "Hört zu", waitingTap: "Wartet auf Antippen", startingMic: "Mikrofon startet", micOff: "Mikrofon aus",
+  msgPreview: "In dieser Vorschau ist das Mikrofon gesperrt. Das Stimmgerät unter seiner eigenen Adresse öffnen.",
+  msgNoMic: "Kein Mikrofon gefunden.",
+  msgDenied: "Der Mikrofonzugriff ist blockiert. In den Browsereinstellungen für diese Seite erlauben und dann irgendwo tippen.",
+  msgAudioFail: "Audio konnte nicht gestartet werden. Seite neu laden.",
+  msgTap: "Irgendwo tippen, um das Zuhören zu starten.",
+  aDial: "Anzeige der Stimmabweichung in Cent",
+  aStrobe: "Teiltonstroboskop: Eine Scheibe dreht sich im Uhrzeigersinn, wenn ihr Teilton zu hoch ist, und gegen den Uhrzeigersinn, wenn er zu tief ist",
+  aPrev: "Einen Halbton tiefer", aNext: "Einen Halbton höher", aMode: "Tonwahl", aChart: "Diagramm", aSettings: "Einstellungen", aDown: "Senken", aUp: "Erhöhen",
+  modeAuto: "Auto", modeStep: "Schritt", modeLock: "Gesperrt", tone: "♪ Ton",
+  tabSpec: "Spektrum", tabCurve: "Kurve", tabInh: "Inharmonizität",
+  aSpec: "Klangspektrum", aCurve: "Stimmkurve: Abweichung der Zielwerte von der gleichstufigen Stimmung und Punkte für gestimmte Töne", aInh: "Inharmonizität der Saiten über die Klaviatur",
+  hView: "Anzeige", hTuning: "Stimmung", hStretch: "Spreizung", hInh: "Inharmonizität", hNeedle: "Zeiger", hCompute: "Berechnung",
+  lang: "Sprache", names: "Tonnamen", temperament: "Temperatur", tonic: "Grundton", refA: "Stimmton {a4}",
+  tEqual: "Gleichstufig", tPyth: "Pythagoreisch", tJust: "Rein (5-Limit)", tMean: "Mitteltönig ¼ Komma",
+  stretchOn: "Spreizung", stretchOff: "Aus: genau nach der Temperatur",
+  stretchTypical: "Nach einem typischen Klavier; für mehr Genauigkeit das eigene Instrument messen", stretchMeasured: "Nach der an diesem Instrument gemessenen Inharmonizität ({n})",
+  style: "Stil", st0: "Ausgewogen · reine Duodezimen 3:1", st1: "Klein · reine Oktaven 2:1", st2: "Mittel · Doppeloktaven 4:1", st3: "Groß · reine 6:1",
+  xTreb: "Zusätzlich im Diskant", xTrebSub: "Abweichung bei {c8}, verteilt auf die obersten 16 Töne",
+  xBass: "Zusätzlich im Bass", xBassSub: "Abweichung bei {a0}, verteilt auf die untersten 16 Töne",
+  measOn: "Inharmonizität messen", measHint: "Mindestens 7 Töne von {lo} bis {hi} messen, z. B. alle {a} und {ds}",
+  measCount: "Gemessene Töne: {n}", mLast: "Zuletzt {note} · B {b}", mFit: "Die Kurve wird an die gemessenen Töne angepasst", mNone: "Vorerst gilt ein typisches Klavier",
+  del: "Löschen", sure: "Sicher?",
+  wMeas: "Gewicht der Messung", wMeasSub: "Weniger = glattere Kurve, mehr = näher am eigenen Instrument",
+  tunedLbl: "Punkte in der Kurve", tunedN: "Töne mit Punkt: {n}", tuned0: "Sie zeigen, wie jeder Ton gestimmt ist",
+  strobeOn: "Teiltonstroboskop", smooth: "Glättung", zoom: "Gespreizte Skalenmitte", sens: "Mikrofonempfindlichkeit", hold: "Wert halten",
+  hiOn: "Höhere Genauigkeit", hiSub: "Bass aus längerem Abschnitt und mehr Teiltönen, bei jeder Messung", hiAuto: "am Computer automatisch an", hiBattery: "braucht am Handy mehr Akku",
+  chartStretch: "Spreizung · {style}", chartNoStretch: "Ohne Spreizung (gleichstufig)",
+  chartInhN: "Gemessene Töne: {n} · Linie = angepasste Kurve", chartInh0: "Noch nichts gemessen · typisches Klavier",
+  cents: "CENT", privacy: "Der Mikrofonton wird nur auf diesem Gerät verarbeitet und nirgendwohin gesendet."
+},
+en: {
+  appName: "Piano Tuner", appShort: "Piano Tuner",
+  listening: "Listening", waitingTap: "Waiting for a tap", startingMic: "Starting microphone", micOff: "Microphone is off",
+  msgPreview: "This preview doesn't allow the microphone. Open the tuner at its own address.",
+  msgNoMic: "No microphone found.",
+  msgDenied: "Microphone access is blocked. Allow it for this page in your browser settings, then tap anywhere.",
+  msgAudioFail: "Couldn't start audio. Reload the page.",
+  msgTap: "Tap anywhere to start listening.",
+  aDial: "Tuning deviation meter in cents",
+  aStrobe: "Partial strobe: a disc turns clockwise when its partial is sharp and counter-clockwise when it is flat",
+  aPrev: "Half step down", aNext: "Half step up", aMode: "Note selection", aChart: "Chart", aSettings: "Settings", aDown: "Lower", aUp: "Raise",
+  modeAuto: "Auto", modeStep: "Stepwise", modeLock: "Locked", tone: "♪ Tone",
+  tabSpec: "Spectrum", tabCurve: "Curve", tabInh: "Inharmonicity",
+  aSpec: "Sound spectrum", aCurve: "Tuning curve: target deviation from equal temperament and dots for tuned notes", aInh: "String inharmonicity across the keyboard",
+  hView: "Display", hTuning: "Tuning", hStretch: "Stretch", hInh: "Inharmonicity", hNeedle: "Needle", hCompute: "Processing",
+  lang: "Language", names: "Note names", temperament: "Temperament", tonic: "Tonic", refA: "Reference pitch {a4}",
+  tEqual: "Equal", tPyth: "Pythagorean", tJust: "Just (5-limit)", tMean: "Meantone ¼ comma",
+  stretchOn: "Stretch tuning", stretchOff: "Off: exactly by the temperament",
+  stretchTypical: "Based on a typical upright; measure your piano for accuracy", stretchMeasured: "Based on inharmonicity measured on your piano ({n})",
+  style: "Style", st0: "Balanced · pure 12ths 3:1", st1: "Small · pure octaves 2:1", st2: "Medium · double octaves 4:1", st3: "Large · pure 19ths 6:1",
+  xTreb: "Extra in the treble", xTrebSub: "Offset at {c8}, ramped over the top 16 notes",
+  xBass: "Extra in the bass", xBassSub: "Offset at {a0}, ramped over the bottom 16 notes",
+  measOn: "Measure inharmonicity", measHint: "Measure at least 7 notes from {lo} to {hi}, e.g. every {a} and {ds}",
+  measCount: "Measured notes: {n}", mLast: "Last: {note} · B {b}", mFit: "The curve is fitted to the measured notes", mNone: "A typical upright is used for now",
+  del: "Delete", sure: "Sure?",
+  wMeas: "Measurement weight", wMeasSub: "Less = smoother curve, more = closer to your piano",
+  tunedLbl: "Dots in the curve chart", tunedN: "Notes with a dot: {n}", tuned0: "They show how each note is tuned",
+  strobeOn: "Partial strobe", smooth: "Smoothing", zoom: "Expanded scale center", sens: "Microphone sensitivity", hold: "Hold reading",
+  hiOn: "Higher precision", hiSub: "Bass from a longer window and more partials, every frame", hiAuto: "on automatically on computers", hiBattery: "uses more battery on phones",
+  chartStretch: "Stretch · {style}", chartNoStretch: "No stretch (equal)",
+  chartInhN: "Measured notes: {n} · line = fitted curve", chartInh0: "Nothing measured yet · typical upright",
+  cents: "CENTS", privacy: "Microphone audio is processed only on this device and is never sent anywhere."
+},
+fr: {
+  appName: "Accordeur de piano", appShort: "Accordeur",
+  listening: "À l'écoute", waitingTap: "En attente d'un toucher", startingMic: "Démarrage du micro", micOff: "Micro désactivé",
+  msgPreview: "Cet aperçu n'autorise pas le micro. Ouvrez l'accordeur à sa propre adresse.",
+  msgNoMic: "Aucun micro trouvé.",
+  msgDenied: "L'accès au micro est bloqué. Autorisez-le pour cette page dans les réglages du navigateur, puis touchez l'écran.",
+  msgAudioFail: "Impossible de démarrer l'audio. Rechargez la page.",
+  msgTap: "Touchez l'écran pour lancer l'écoute.",
+  aDial: "Indicateur d'écart d'accord en cents",
+  aStrobe: "Stroboscope des partiels : un disque tourne dans le sens horaire quand son partiel est trop haut et dans le sens antihoraire quand il est trop bas",
+  aPrev: "Un demi-ton plus bas", aNext: "Un demi-ton plus haut", aMode: "Choix de la note", aChart: "Graphique", aSettings: "Réglages", aDown: "Baisser", aUp: "Monter",
+  modeAuto: "Auto", modeStep: "Pas à pas", modeLock: "Verrouillé", tone: "♪ Son",
+  tabSpec: "Spectre", tabCurve: "Courbe", tabInh: "Inharmonicité",
+  aSpec: "Spectre du son", aCurve: "Courbe d'accord : écart des cibles par rapport au tempérament égal et points des notes accordées", aInh: "Inharmonicité des cordes sur tout le clavier",
+  hView: "Affichage", hTuning: "Accord", hStretch: "Étirement", hInh: "Inharmonicité", hNeedle: "Aiguille", hCompute: "Calcul",
+  lang: "Langue", names: "Noms des notes", temperament: "Tempérament", tonic: "Tonique", refA: "Diapason {a4}",
+  tEqual: "Égal", tPyth: "Pythagoricien", tJust: "Juste (limite 5)", tMean: "Mésotonique ¼ de comma",
+  stretchOn: "Accord étiré", stretchOff: "Désactivé : exactement selon le tempérament",
+  stretchTypical: "D'après un piano droit typique ; mesurez votre piano pour plus de précision", stretchMeasured: "D'après l'inharmonicité mesurée sur votre piano ({n})",
+  style: "Style", st0: "Équilibré · douzièmes pures 3:1", st1: "Faible · octaves pures 2:1", st2: "Moyen · doubles octaves 4:1", st3: "Fort · 6:1 pures",
+  xTreb: "Supplément dans les aigus", xTrebSub: "Écart au {c8}, réparti sur les 16 notes du haut",
+  xBass: "Supplément dans les graves", xBassSub: "Écart au {a0}, réparti sur les 16 notes du bas",
+  measOn: "Mesurer l'inharmonicité", measHint: "Mesurez au moins 7 notes de {lo} à {hi}, par exemple tous les {a} et {ds}",
+  measCount: "Notes mesurées : {n}", mLast: "Dernière : {note} · B {b}", mFit: "La courbe est ajustée aux notes mesurées", mNone: "Un piano droit typique est utilisé pour l'instant",
+  del: "Effacer", sure: "Sûr ?",
+  wMeas: "Poids des mesures", wMeasSub: "Moins = courbe plus lisse, plus = plus fidèle à votre piano",
+  tunedLbl: "Points du graphique de la courbe", tunedN: "Notes avec un point : {n}", tuned0: "Ils montrent l'accord de chaque note",
+  strobeOn: "Stroboscope des partiels", smooth: "Lissage", zoom: "Centre de l'échelle agrandi", sens: "Sensibilité du micro", hold: "Maintien de la valeur",
+  hiOn: "Précision accrue", hiSub: "Graves sur une fenêtre plus longue avec plus de partiels, à chaque mesure", hiAuto: "activée automatiquement sur ordinateur", hiBattery: "consomme plus de batterie sur téléphone",
+  chartStretch: "Étirement · {style}", chartNoStretch: "Sans étirement (égal)",
+  chartInhN: "Notes mesurées : {n} · ligne = courbe ajustée", chartInh0: "Rien de mesuré · piano droit typique",
+  cents: "CENTS", privacy: "Le son du micro est traité uniquement sur cet appareil et n'est envoyé nulle part."
+},
+es: {
+  appName: "Afinador de piano", appShort: "Afinador",
+  listening: "Escuchando", waitingTap: "Esperando un toque", startingMic: "Iniciando el micrófono", micOff: "El micrófono está apagado",
+  msgPreview: "Esta vista previa no permite el micrófono. Abre el afinador en su propia dirección.",
+  msgNoMic: "No se encontró ningún micrófono.",
+  msgDenied: "El acceso al micrófono está bloqueado. Permítelo para esta página en los ajustes del navegador y toca en cualquier lugar.",
+  msgAudioFail: "No se pudo iniciar el audio. Recarga la página.",
+  msgTap: "Toca en cualquier lugar para empezar a escuchar.",
+  aDial: "Medidor de desviación de afinación en cents",
+  aStrobe: "Estroboscopio de parciales: un disco gira en sentido horario cuando su parcial está alto y antihorario cuando está bajo",
+  aPrev: "Medio tono abajo", aNext: "Medio tono arriba", aMode: "Selección de nota", aChart: "Gráfico", aSettings: "Ajustes", aDown: "Bajar", aUp: "Subir",
+  modeAuto: "Auto", modeStep: "Paso a paso", modeLock: "Bloqueado", tone: "♪ Tono",
+  tabSpec: "Espectro", tabCurve: "Curva", tabInh: "Inarmonicidad",
+  aSpec: "Espectro del sonido", aCurve: "Curva de afinación: desviación de los objetivos respecto al temperamento igual y puntos de las notas afinadas", aInh: "Inarmonicidad de las cuerdas a lo largo del teclado",
+  hView: "Vista", hTuning: "Afinación", hStretch: "Estiramiento", hInh: "Inarmonicidad", hNeedle: "Aguja", hCompute: "Cálculo",
+  lang: "Idioma", names: "Nombres de notas", temperament: "Temperamento", tonic: "Tónica", refA: "Diapasón {a4}",
+  tEqual: "Igual", tPyth: "Pitagórico", tJust: "Justo (límite 5)", tMean: "Mesotónico ¼ de coma",
+  stretchOn: "Afinación estirada", stretchOff: "Desactivado: exactamente según el temperamento",
+  stretchTypical: "Según un piano vertical típico; mide tu piano para más precisión", stretchMeasured: "Según la inarmonicidad medida en tu piano ({n})",
+  style: "Estilo", st0: "Equilibrado · duodécimas puras 3:1", st1: "Pequeño · octavas puras 2:1", st2: "Medio · dobles octavas 4:1", st3: "Grande · 6:1 puras",
+  xTreb: "Extra en los agudos", xTrebSub: "Desviación en {c8}, repartida en las 16 notas superiores",
+  xBass: "Extra en los graves", xBassSub: "Desviación en {a0}, repartida en las 16 notas inferiores",
+  measOn: "Medir la inarmonicidad", measHint: "Mide al menos 7 notas de {lo} a {hi}, por ejemplo todos los {a} y {ds}",
+  measCount: "Notas medidas: {n}", mLast: "Última: {note} · B {b}", mFit: "La curva se ajusta a las notas medidas", mNone: "Por ahora se usa un piano vertical típico",
+  del: "Borrar", sure: "¿Seguro?",
+  wMeas: "Peso de las mediciones", wMeasSub: "Menos = curva más suave, más = más fiel a tu piano",
+  tunedLbl: "Puntos en el gráfico de la curva", tunedN: "Notas con punto: {n}", tuned0: "Muestran cómo está afinada cada nota",
+  strobeOn: "Estroboscopio de parciales", smooth: "Suavizado", zoom: "Centro de escala ampliado", sens: "Sensibilidad del micrófono", hold: "Mantener lectura",
+  hiOn: "Mayor precisión", hiSub: "Graves con una ventana más larga y más parciales, en cada lectura", hiAuto: "activada automáticamente en ordenadores", hiBattery: "gasta más batería en el móvil",
+  chartStretch: "Estiramiento · {style}", chartNoStretch: "Sin estiramiento (igual)",
+  chartInhN: "Notas medidas: {n} · línea = curva ajustada", chartInh0: "Aún no hay mediciones · piano vertical típico",
+  cents: "CENTS", privacy: "El sonido del micrófono se procesa solo en este dispositivo y nunca se envía a ningún sitio."
+},
+it: {
+  appName: "Accordatore per pianoforte", appShort: "Accordatore",
+  listening: "In ascolto", waitingTap: "In attesa di un tocco", startingMic: "Avvio del microfono", micOff: "Microfono spento",
+  msgPreview: "Questa anteprima non consente il microfono. Apri l'accordatore al suo indirizzo.",
+  msgNoMic: "Nessun microfono trovato.",
+  msgDenied: "L'accesso al microfono è bloccato. Consentilo per questa pagina nelle impostazioni del browser e tocca un punto qualsiasi.",
+  msgAudioFail: "Impossibile avviare l'audio. Ricarica la pagina.",
+  msgTap: "Tocca un punto qualsiasi per iniziare l'ascolto.",
+  aDial: "Indicatore dello scostamento di accordatura in cent",
+  aStrobe: "Stroboscopio dei parziali: un disco ruota in senso orario quando il suo parziale è crescente e in senso antiorario quando è calante",
+  aPrev: "Un semitono sotto", aNext: "Un semitono sopra", aMode: "Scelta della nota", aChart: "Grafico", aSettings: "Impostazioni", aDown: "Abbassa", aUp: "Alza",
+  modeAuto: "Auto", modeStep: "Passo passo", modeLock: "Bloccato", tone: "♪ Tono",
+  tabSpec: "Spettro", tabCurve: "Curva", tabInh: "Inarmonicità",
+  aSpec: "Spettro del suono", aCurve: "Curva di accordatura: scostamento degli obiettivi dal temperamento equabile e punti delle note accordate", aInh: "Inarmonicità delle corde lungo la tastiera",
+  hView: "Visualizzazione", hTuning: "Accordatura", hStretch: "Allungamento", hInh: "Inarmonicità", hNeedle: "Lancetta", hCompute: "Calcolo",
+  lang: "Lingua", names: "Nomi delle note", temperament: "Temperamento", tonic: "Tonica", refA: "Diapason {a4}",
+  tEqual: "Equabile", tPyth: "Pitagorico", tJust: "Naturale (limite 5)", tMean: "Mesotonico ¼ di comma",
+  stretchOn: "Accordatura allungata", stretchOff: "Disattivato: esattamente secondo il temperamento",
+  stretchTypical: "In base a un pianoforte verticale tipico; misura il tuo strumento per maggiore precisione", stretchMeasured: "In base all'inarmonicità misurata sul tuo pianoforte ({n})",
+  style: "Stile", st0: "Equilibrato · dodicesime pure 3:1", st1: "Piccolo · ottave pure 2:1", st2: "Medio · doppie ottave 4:1", st3: "Grande · 6:1 pure",
+  xTreb: "Extra negli acuti", xTrebSub: "Scostamento al {c8}, distribuito sulle 16 note più acute",
+  xBass: "Extra nei bassi", xBassSub: "Scostamento al {a0}, distribuito sulle 16 note più gravi",
+  measOn: "Misura l'inarmonicità", measHint: "Misura almeno 7 note da {lo} a {hi}, per esempio tutti i {a} e i {ds}",
+  measCount: "Note misurate: {n}", mLast: "Ultima: {note} · B {b}", mFit: "La curva si adatta alle note misurate", mNone: "Per ora vale un pianoforte verticale tipico",
+  del: "Elimina", sure: "Sicuro?",
+  wMeas: "Peso delle misure", wMeasSub: "Meno = curva più regolare, più = più fedele al tuo pianoforte",
+  tunedLbl: "Punti nel grafico della curva", tunedN: "Note con punto: {n}", tuned0: "Mostrano come è accordata ogni nota",
+  strobeOn: "Stroboscopio dei parziali", smooth: "Smussamento", zoom: "Centro della scala ingrandito", sens: "Sensibilità del microfono", hold: "Mantieni il valore",
+  hiOn: "Precisione maggiore", hiSub: "Bassi da una finestra più lunga e più parziali, a ogni misura", hiAuto: "attiva automaticamente sui computer", hiBattery: "consuma più batteria sul telefono",
+  chartStretch: "Allungamento · {style}", chartNoStretch: "Senza allungamento (equabile)",
+  chartInhN: "Note misurate: {n} · linea = curva adattata", chartInh0: "Ancora nessuna misura · verticale tipico",
+  cents: "CENT", privacy: "L'audio del microfono viene elaborato solo su questo dispositivo e non viene inviato da nessuna parte."
+},
+pt: {
+  appName: "Afinador de piano", appShort: "Afinador",
+  listening: "Ouvindo", waitingTap: "Aguardando um toque", startingMic: "Iniciando o microfone", micOff: "Microfone desligado",
+  msgPreview: "Esta pré-visualização não permite o microfone. Abra o afinador no próprio endereço.",
+  msgNoMic: "Nenhum microfone encontrado.",
+  msgDenied: "O acesso ao microfone está bloqueado. Permita-o para esta página nas configurações do navegador e toque em qualquer lugar.",
+  msgAudioFail: "Não foi possível iniciar o áudio. Recarregue a página.",
+  msgTap: "Toque em qualquer lugar para começar a ouvir.",
+  aDial: "Medidor de desvio de afinação em cents",
+  aStrobe: "Estroboscópio de parciais: um disco gira no sentido horário quando o parcial está alto e no anti-horário quando está baixo",
+  aPrev: "Meio tom abaixo", aNext: "Meio tom acima", aMode: "Seleção da nota", aChart: "Gráfico", aSettings: "Configurações", aDown: "Abaixar", aUp: "Subir",
+  modeAuto: "Auto", modeStep: "Passo", modeLock: "Travado", tone: "♪ Tom",
+  tabSpec: "Espectro", tabCurve: "Curva", tabInh: "Inarmonicidade",
+  aSpec: "Espectro do som", aCurve: "Curva de afinação: desvio dos alvos em relação ao temperamento igual e pontos das notas afinadas", aInh: "Inarmonicidade das cordas ao longo do teclado",
+  hView: "Exibição", hTuning: "Afinação", hStretch: "Estiramento", hInh: "Inarmonicidade", hNeedle: "Ponteiro", hCompute: "Cálculo",
+  lang: "Idioma", names: "Nomes das notas", temperament: "Temperamento", tonic: "Tônica", refA: "Diapasão {a4}",
+  tEqual: "Igual", tPyth: "Pitagórico", tJust: "Justo (limite 5)", tMean: "Mesotônico ¼ de coma",
+  stretchOn: "Afinação estirada", stretchOff: "Desligado: exatamente pelo temperamento",
+  stretchTypical: "Com base em um piano vertical típico; meça seu piano para mais precisão", stretchMeasured: "Com base na inarmonicidade medida no seu piano ({n})",
+  style: "Estilo", st0: "Equilibrado · duodécimas puras 3:1", st1: "Pequeno · oitavas puras 2:1", st2: "Médio · oitavas duplas 4:1", st3: "Grande · 6:1 puras",
+  xTreb: "Extra nos agudos", xTrebSub: "Desvio em {c8}, distribuído nas 16 notas mais agudas",
+  xBass: "Extra nos graves", xBassSub: "Desvio em {a0}, distribuído nas 16 notas mais graves",
+  measOn: "Medir a inarmonicidade", measHint: "Meça pelo menos 7 notas de {lo} a {hi}, por exemplo todos os {a} e {ds}",
+  measCount: "Notas medidas: {n}", mLast: "Última: {note} · B {b}", mFit: "A curva é ajustada às notas medidas", mNone: "Por enquanto vale um piano vertical típico",
+  del: "Apagar", sure: "Certeza?",
+  wMeas: "Peso das medições", wMeasSub: "Menos = curva mais suave, mais = mais fiel ao seu piano",
+  tunedLbl: "Pontos no gráfico da curva", tunedN: "Notas com ponto: {n}", tuned0: "Mostram como cada nota está afinada",
+  strobeOn: "Estroboscópio de parciais", smooth: "Suavização", zoom: "Centro da escala ampliado", sens: "Sensibilidade do microfone", hold: "Manter leitura",
+  hiOn: "Maior precisão", hiSub: "Graves com janela mais longa e mais parciais, a cada leitura", hiAuto: "ligada automaticamente em computadores", hiBattery: "gasta mais bateria no celular",
+  chartStretch: "Estiramento · {style}", chartNoStretch: "Sem estiramento (igual)",
+  chartInhN: "Notas medidas: {n} · linha = curva ajustada", chartInh0: "Nada medido ainda · piano vertical típico",
+  cents: "CENTS", privacy: "O som do microfone é processado somente neste dispositivo e nunca é enviado para lugar nenhum."
+},
+nl: {
+  appName: "Pianostemapparaat", appShort: "Stemapparaat",
+  listening: "Luistert", waitingTap: "Wacht op een tik", startingMic: "Microfoon start", micOff: "Microfoon staat uit",
+  msgPreview: "Deze voorvertoning staat de microfoon niet toe. Open het stemapparaat op zijn eigen adres.",
+  msgNoMic: "Geen microfoon gevonden.",
+  msgDenied: "Microfoontoegang is geblokkeerd. Sta die voor deze pagina toe in de browserinstellingen en tik ergens.",
+  msgAudioFail: "Audio kon niet starten. Laad de pagina opnieuw.",
+  msgTap: "Tik ergens om te beginnen met luisteren.",
+  aDial: "Meter van de stemafwijking in cent",
+  aStrobe: "Deeltoonstroboscoop: een schijf draait met de klok mee als de deeltoon te hoog is en tegen de klok in als hij te laag is",
+  aPrev: "Halve toon lager", aNext: "Halve toon hoger", aMode: "Nootkeuze", aChart: "Grafiek", aSettings: "Instellingen", aDown: "Lager", aUp: "Hoger",
+  modeAuto: "Auto", modeStep: "Stap", modeLock: "Vast", tone: "♪ Toon",
+  tabSpec: "Spectrum", tabCurve: "Curve", tabInh: "Inharmoniciteit",
+  aSpec: "Klankspectrum", aCurve: "Stemcurve: afwijking van de doelen ten opzichte van gelijkzwevende stemming en punten voor gestemde noten", aInh: "Inharmoniciteit van de snaren over het klavier",
+  hView: "Weergave", hTuning: "Stemming", hStretch: "Strekking", hInh: "Inharmoniciteit", hNeedle: "Naald", hCompute: "Berekening",
+  lang: "Taal", names: "Nootnamen", temperament: "Temperatuur", tonic: "Grondtoon", refA: "Stemtoon {a4}",
+  tEqual: "Gelijkzwevend", tPyth: "Pythagoreïsch", tJust: "Rein (5-limiet)", tMean: "Middentoon ¼ komma",
+  stretchOn: "Gestrekte stemming", stretchOff: "Uit: precies volgens de temperatuur",
+  stretchTypical: "Op basis van een typische buffetpiano; meet je piano voor meer nauwkeurigheid", stretchMeasured: "Op basis van de inharmoniciteit gemeten op je piano ({n})",
+  style: "Stijl", st0: "Evenwichtig · reine duodecimen 3:1", st1: "Klein · reine octaven 2:1", st2: "Middel · dubbele octaven 4:1", st3: "Groot · reine 6:1",
+  xTreb: "Extra in de discant", xTrebSub: "Afwijking op {c8}, verdeeld over de bovenste 16 noten",
+  xBass: "Extra in de bas", xBassSub: "Afwijking op {a0}, verdeeld over de onderste 16 noten",
+  measOn: "Inharmoniciteit meten", measHint: "Meet minstens 7 noten van {lo} tot {hi}, bijvoorbeeld elke {a} en {ds}",
+  measCount: "Gemeten noten: {n}", mLast: "Laatst {note} · B {b}", mFit: "De curve wordt aan de gemeten noten aangepast", mNone: "Voorlopig geldt een typische buffetpiano",
+  del: "Wissen", sure: "Zeker?",
+  wMeas: "Gewicht van de metingen", wMeasSub: "Minder = gladdere curve, meer = dichter bij je piano",
+  tunedLbl: "Punten in de curvegrafiek", tunedN: "Noten met een punt: {n}", tuned0: "Ze tonen hoe elke noot gestemd is",
+  strobeOn: "Deeltoonstroboscoop", smooth: "Afvlakking", zoom: "Vergroot schaalmidden", sens: "Microfoongevoeligheid", hold: "Waarde vasthouden",
+  hiOn: "Hogere nauwkeurigheid", hiSub: "Bas uit een langer venster en meer deeltonen, bij elke meting", hiAuto: "op computers automatisch aan", hiBattery: "gebruikt op telefoons meer batterij",
+  chartStretch: "Strekking · {style}", chartNoStretch: "Geen strekking (gelijkzwevend)",
+  chartInhN: "Gemeten noten: {n} · lijn = aangepaste curve", chartInh0: "Nog niets gemeten · typische buffetpiano",
+  cents: "CENT", privacy: "Het microfoongeluid wordt alleen op dit apparaat verwerkt en nergens naartoe gestuurd."
+},
+uk: {
+  appName: "Тюнер для фортепіано", appShort: "Тюнер",
+  listening: "Слухаю", waitingTap: "Чекаю на дотик", startingMic: "Вмикаю мікрофон", micOff: "Мікрофон вимкнено",
+  msgPreview: "У цьому попередньому перегляді мікрофон недоступний. Відкрийте тюнер за його власною адресою.",
+  msgNoMic: "Мікрофон не знайдено.",
+  msgDenied: "Доступ до мікрофона заблоковано. Дозвольте його для цієї сторінки в налаштуваннях браузера й торкніться екрана.",
+  msgAudioFail: "Не вдалося запустити звук. Перезавантажте сторінку.",
+  msgTap: "Торкніться екрана, щоб почати слухати.",
+  aDial: "Індикатор відхилення строю в центах",
+  aStrobe: "Стробоскоп обертонів: диск обертається за годинниковою стрілкою, коли обертон зависокий, і проти, коли занизький",
+  aPrev: "На півтону нижче", aNext: "На півтону вище", aMode: "Вибір ноти", aChart: "Графік", aSettings: "Налаштування", aDown: "Знизити", aUp: "Підвищити",
+  modeAuto: "Авто", modeStep: "Кроками", modeLock: "Фіксація", tone: "♪ Тон",
+  tabSpec: "Спектр", tabCurve: "Крива", tabInh: "Негармонічність",
+  aSpec: "Спектр звуку", aCurve: "Крива строю: відхилення цілей від рівномірної темперації та точки настроєних нот", aInh: "Негармонічність струн уздовж клавіатури",
+  hView: "Вигляд", hTuning: "Стрій", hStretch: "Розтягнення", hInh: "Негармонічність", hNeedle: "Стрілка", hCompute: "Обчислення",
+  lang: "Мова", names: "Назви нот", temperament: "Темперація", tonic: "Тоніка", refA: "Камертон {a4}",
+  tEqual: "Рівномірна", tPyth: "Піфагорова", tJust: "Чиста (5-лімітна)", tMean: "Середньотонова ¼ коми",
+  stretchOn: "Розтягнутий стрій", stretchOff: "Вимкнено: точно за темперацією",
+  stretchTypical: "За типовим піаніно; виміряйте свій інструмент для точності", stretchMeasured: "За негармонічністю, виміряною на вашому інструменті ({n})",
+  style: "Стиль", st0: "Збалансований · чисті дуодецими 3:1", st1: "Малий · чисті октави 2:1", st2: "Середній · подвійні октави 4:1", st3: "Великий · чисті 6:1",
+  xTreb: "Додатково у верхах", xTrebSub: "Відхилення на {c8}, розподілене на верхні 16 нот",
+  xBass: "Додатково в басах", xBassSub: "Відхилення на {a0}, розподілене на нижні 16 нот",
+  measOn: "Вимірювати негармонічність", measHint: "Виміряйте щонайменше 7 нот від {lo} до {hi}, наприклад усі {a} і {ds}",
+  measCount: "Виміряні ноти: {n}", mLast: "Останнє: {note} · B {b}", mFit: "Крива підлаштовується під виміряні ноти", mNone: "Поки що діє типове піаніно",
+  del: "Видалити", sure: "Точно?",
+  wMeas: "Вага вимірювань", wMeasSub: "Менше — гладша крива, більше — точніше для вашого інструмента",
+  tunedLbl: "Точки на графіку кривої", tunedN: "Нот із точкою: {n}", tuned0: "Показують, як настроєна кожна нота",
+  strobeOn: "Стробоскоп обертонів", smooth: "Згладжування", zoom: "Збільшений центр шкали", sens: "Чутливість мікрофона", hold: "Утримання значення",
+  hiOn: "Вища точність", hiSub: "Баси з довшого відрізка й більше обертонів, на кожному кроці", hiAuto: "на комп'ютері вмикається сама", hiBattery: "на телефоні більше розряджає батарею",
+  chartStretch: "Розтягнення · {style}", chartNoStretch: "Без розтягнення (рівномірно)",
+  chartInhN: "Виміряні ноти: {n} · лінія = підігнана крива", chartInh0: "Ще нічого не виміряно · типове піаніно",
+  cents: "ЦЕНТИ", privacy: "Звук із мікрофона обробляється лише на цьому пристрої й нікуди не надсилається."
+},
+ru: {
+  appName: "Тюнер для фортепиано", appShort: "Тюнер",
+  listening: "Слушаю", waitingTap: "Жду касания", startingMic: "Включаю микрофон", micOff: "Микрофон выключен",
+  msgPreview: "В этом предпросмотре микрофон недоступен. Откройте тюнер по его собственному адресу.",
+  msgNoMic: "Микрофон не найден.",
+  msgDenied: "Доступ к микрофону заблокирован. Разрешите его для этой страницы в настройках браузера и коснитесь экрана.",
+  msgAudioFail: "Не удалось запустить звук. Перезагрузите страницу.",
+  msgTap: "Коснитесь экрана, чтобы начать слушать.",
+  aDial: "Индикатор отклонения строя в центах",
+  aStrobe: "Стробоскоп обертонов: диск вращается по часовой стрелке, когда обертон завышен, и против, когда занижен",
+  aPrev: "На полтона ниже", aNext: "На полтона выше", aMode: "Выбор ноты", aChart: "График", aSettings: "Настройки", aDown: "Понизить", aUp: "Повысить",
+  modeAuto: "Авто", modeStep: "Шагами", modeLock: "Фиксация", tone: "♪ Тон",
+  tabSpec: "Спектр", tabCurve: "Кривая", tabInh: "Негармоничность",
+  aSpec: "Спектр звука", aCurve: "Кривая строя: отклонение целей от равномерной темперации и точки настроенных нот", aInh: "Негармоничность струн по клавиатуре",
+  hView: "Вид", hTuning: "Строй", hStretch: "Растяжение", hInh: "Негармоничность", hNeedle: "Стрелка", hCompute: "Вычисления",
+  lang: "Язык", names: "Названия нот", temperament: "Темперация", tonic: "Тоника", refA: "Камертон {a4}",
+  tEqual: "Равномерная", tPyth: "Пифагорова", tJust: "Чистая (5-лимитная)", tMean: "Среднетоновая ¼ коммы",
+  stretchOn: "Растянутый строй", stretchOff: "Выключено: точно по темперации",
+  stretchTypical: "По типичному пианино; измерьте свой инструмент для точности", stretchMeasured: "По негармоничности, измеренной на вашем инструменте ({n})",
+  style: "Стиль", st0: "Сбалансированный · чистые дуодецимы 3:1", st1: "Малый · чистые октавы 2:1", st2: "Средний · двойные октавы 4:1", st3: "Большой · чистые 6:1",
+  xTreb: "Дополнительно в верхах", xTrebSub: "Отклонение на {c8}, распределённое на верхние 16 нот",
+  xBass: "Дополнительно в басах", xBassSub: "Отклонение на {a0}, распределённое на нижние 16 нот",
+  measOn: "Измерять негармоничность", measHint: "Измерьте не меньше 7 нот от {lo} до {hi}, например все {a} и {ds}",
+  measCount: "Измеренные ноты: {n}", mLast: "Последнее: {note} · B {b}", mFit: "Кривая подстраивается под измеренные ноты", mNone: "Пока действует типичное пианино",
+  del: "Удалить", sure: "Точно?",
+  wMeas: "Вес измерений", wMeasSub: "Меньше — более гладкая кривая, больше — точнее для вашего инструмента",
+  tunedLbl: "Точки на графике кривой", tunedN: "Нот с точкой: {n}", tuned0: "Показывают, как настроена каждая нота",
+  strobeOn: "Стробоскоп обертонов", smooth: "Сглаживание", zoom: "Увеличенный центр шкалы", sens: "Чувствительность микрофона", hold: "Удержание значения",
+  hiOn: "Повышенная точность", hiSub: "Басы по более длинному отрезку и больше обертонов, на каждом шаге", hiAuto: "на компьютере включается сама", hiBattery: "на телефоне сильнее расходует батарею",
+  chartStretch: "Растяжение · {style}", chartNoStretch: "Без растяжения (равномерно)",
+  chartInhN: "Измеренные ноты: {n} · линия = подогнанная кривая", chartInh0: "Ещё ничего не измерено · типичное пианино",
+  cents: "ЦЕНТЫ", privacy: "Звук с микрофона обрабатывается только на этом устройстве и никуда не отправляется."
+},
+ja: {
+  appName: "ピアノチューナー", appShort: "チューナー",
+  listening: "聴き取り中", waitingTap: "タップを待っています", startingMic: "マイクを起動中", micOff: "マイクはオフです",
+  msgPreview: "このプレビューではマイクを使えません。チューナー本来のアドレスで開いてください。",
+  msgNoMic: "マイクが見つかりません。",
+  msgDenied: "マイクへのアクセスがブロックされています。ブラウザの設定でこのページのマイクを許可し、画面をタップしてください。",
+  msgAudioFail: "オーディオを開始できませんでした。ページを再読み込みしてください。",
+  msgTap: "画面をタップすると聴き取りを始めます。",
+  aDial: "調律のずれ（セント）を示すメーター",
+  aStrobe: "倍音ストロボ：倍音が高いと円盤は時計回り、低いと反時計回りに回ります",
+  aPrev: "半音下", aNext: "半音上", aMode: "音の選択", aChart: "グラフ", aSettings: "設定", aDown: "下げる", aUp: "上げる",
+  modeAuto: "自動", modeStep: "半音ずつ", modeLock: "固定", tone: "♪ 音",
+  tabSpec: "スペクトル", tabCurve: "カーブ", tabInh: "非調和性",
+  aSpec: "音のスペクトル", aCurve: "調律カーブ：平均律からの目標のずれと、調律済みの音の点", aInh: "鍵盤全体の弦のインハーモニシティ",
+  hView: "表示", hTuning: "調律", hStretch: "ストレッチ", hInh: "インハーモニシティ", hNeedle: "針", hCompute: "計算",
+  lang: "言語", names: "音名", temperament: "音律", tonic: "主音", refA: "基準音 {a4}",
+  tEqual: "平均律", tPyth: "ピタゴラス音律", tJust: "純正律（5リミット）", tMean: "1/4コンマ中全音律",
+  stretchOn: "ストレッチ調律", stretchOff: "オフ：音律どおり",
+  stretchTypical: "標準的なアップライトに基づきます。精度を上げるにはピアノを測定してください", stretchMeasured: "このピアノで測定したインハーモニシティに基づきます（{n}）",
+  style: "スタイル", st0: "バランス・純正12度 3:1", st1: "小・純正オクターブ 2:1", st2: "中・2オクターブ 4:1", st3: "大・純正 6:1",
+  xTreb: "高音域の追加", xTrebSub: "{c8}でのずれ。上の16音で徐々に",
+  xBass: "低音域の追加", xBassSub: "{a0}でのずれ。下の16音で徐々に",
+  measOn: "インハーモニシティを測定", measHint: "{lo}から{hi}まで少なくとも7音を測定してください（例：すべての{a}と{ds}）",
+  measCount: "測定した音：{n}", mLast: "最後：{note} · B {b}", mFit: "カーブを測定した音に合わせます", mNone: "現在は標準的なアップライトを使用",
+  del: "削除", sure: "本当に？",
+  wMeas: "測定の重み", wMeasSub: "小さい＝なめらかなカーブ、大きい＝このピアノに忠実",
+  tunedLbl: "カーブのグラフの点", tunedN: "点のある音：{n}", tuned0: "各音の調律状態を示します",
+  strobeOn: "倍音ストロボ", smooth: "平滑化", zoom: "目盛り中央を拡大", sens: "マイク感度", hold: "表示の保持",
+  hiOn: "高精度", hiSub: "低音を長い区間とより多くの倍音で毎回計算", hiAuto: "パソコンでは自動でオン", hiBattery: "スマートフォンでは電池を多く使います",
+  chartStretch: "ストレッチ · {style}", chartNoStretch: "ストレッチなし（平均律）",
+  chartInhN: "測定した音：{n} · 線＝近似カーブ", chartInh0: "まだ測定なし · 標準的なアップライト",
+  cents: "セント", privacy: "マイクの音声はこの端末内だけで処理され、どこにも送信されません。"
+},
+zh: {
+  appName: "钢琴调音器", appShort: "调音器",
+  listening: "正在聆听", waitingTap: "等待轻点", startingMic: "正在启动麦克风", micOff: "麦克风已关闭",
+  msgPreview: "此预览不允许使用麦克风。请在调音器自己的网址打开。",
+  msgNoMic: "未找到麦克风。",
+  msgDenied: "麦克风访问被阻止。请在浏览器设置中允许此页面使用麦克风，然后轻点任意位置。",
+  msgAudioFail: "无法启动音频。请刷新页面。",
+  msgTap: "轻点任意位置开始聆听。",
+  aDial: "以音分显示的调音偏差表",
+  aStrobe: "泛音频闪：泛音偏高时圆盘顺时针转动，偏低时逆时针转动",
+  aPrev: "降半音", aNext: "升半音", aMode: "音符选择", aChart: "图表", aSettings: "设置", aDown: "降低", aUp: "升高",
+  modeAuto: "自动", modeStep: "逐半音", modeLock: "锁定", tone: "♪ 音",
+  tabSpec: "频谱", tabCurve: "曲线", tabInh: "非谐性",
+  aSpec: "声音频谱", aCurve: "调音曲线：目标相对于平均律的偏差，以及已调音符的点", aInh: "整个键盘的琴弦非谐性",
+  hView: "显示", hTuning: "调音", hStretch: "伸展", hInh: "非谐性", hNeedle: "指针", hCompute: "计算",
+  lang: "语言", names: "音名", temperament: "律制", tonic: "主音", refA: "标准音 {a4}",
+  tEqual: "十二平均律", tPyth: "五度相生律", tJust: "纯律（5限）", tMean: "1/4音差中全音律",
+  stretchOn: "伸展调音", stretchOff: "关闭：严格按律制",
+  stretchTypical: "按典型立式钢琴计算；测量您的钢琴可提高精度", stretchMeasured: "按在您的钢琴上测得的非谐性计算（{n}）",
+  style: "风格", st0: "均衡 · 纯十二度 3:1", st1: "小 · 纯八度 2:1", st2: "中 · 双八度 4:1", st3: "大 · 纯 6:1",
+  xTreb: "高音区额外", xTrebSub: "{c8} 处的偏差，在最高 16 个音上渐变",
+  xBass: "低音区额外", xBassSub: "{a0} 处的偏差，在最低 16 个音上渐变",
+  measOn: "测量非谐性", measHint: "请从 {lo} 到 {hi} 至少测量 7 个音，例如所有的 {a} 和 {ds}",
+  measCount: "已测量的音：{n}", mLast: "最近：{note} · B {b}", mFit: "曲线按已测量的音拟合", mNone: "目前使用典型立式钢琴",
+  del: "删除", sure: "确定？",
+  wMeas: "测量权重", wMeasSub: "较小 = 曲线更平滑，较大 = 更贴合您的钢琴",
+  tunedLbl: "曲线图中的点", tunedN: "有点的音：{n}", tuned0: "显示每个音的调音情况",
+  strobeOn: "泛音频闪", smooth: "平滑", zoom: "放大刻度中心", sens: "麦克风灵敏度", hold: "保持读数",
+  hiOn: "更高精度", hiSub: "低音使用更长的片段和更多泛音，每次都计算", hiAuto: "在电脑上自动开启", hiBattery: "在手机上更耗电",
+  chartStretch: "伸展 · {style}", chartNoStretch: "无伸展（平均律）",
+  chartInhN: "已测量的音：{n} · 线 = 拟合曲线", chartInh0: "尚未测量 · 典型立式钢琴",
+  cents: "音分", privacy: "麦克风声音只在本设备上处理，不会发送到任何地方。"
+}
+};
+
+// ---------- Styly ladění: váhy intervalů ----------
+// Interval = [půltóny, parciál spodní noty, parciál horní noty]. Interval je bez rázů, když se ty dva parciály kryjí.
+const IV = { O21: [12, 2, 1], O42: [12, 4, 2], O63: [12, 6, 3], O84: [12, 8, 4], O105: [12, 10, 5],
+             T31: [19, 3, 1], D41: [24, 4, 1], N61: [31, 6, 1] };
+// t = temperamentová oktáva A3–A4, up = od A4 nahoru, down = od A3 dolů.
+// BASS = basové oktávy podle velikosti klavíru: malé pianino spíš 6:3, velké křídlo spíš 8:4 a 10:5.
+const STYLES = [
+  { t: { O21: 1, O42: 1 },
+    up: { O21: 1, T31: 3, D41: 1, N61: 0.3 }, down: { O42: 1, BASS: 1.5, T31: 2, D41: 1 } },
+  { t: { O21: 2, O42: 1 },
+    up: { O21: 4, D41: 0.5 }, down: { O21: 1, O42: 2, BASS: 0.5 } },
+  { t: { O21: 1, O42: 2 },
+    up: { O21: 1, T31: 1, D41: 3 }, down: { O42: 1, BASS: 1.5, D41: 2 } },
+  { t: { O21: 0.5, O42: 2, O63: 0.5 },
+    up: { O21: 0.5, T31: 1, D41: 1, N61: 3 }, down: { O42: 0.5, BASS: 2, T31: 1, N61: 2 } },
+];
+
+// ---------- Nastavení (pamatuje si je prohlížeč v zařízení) ----------
+const settings = { lang: null, names: null, refA: 440, temp: "eq", tonic: 0, stretch: false, style: 0, xTreb: 0, xBass: 0,
+                   meas: {}, wMeas: 0.75, measOn: true, tuned: {}, noteMode: "auto", chart: "spec", strobe: true,
+                   hold: 2, zoom: true, sens: 4, smooth: 0.75, hiPerf: null };
+try { Object.assign(settings, JSON.parse(localStorage.getItem("pm") || "{}")); } catch (e) {}
+for (const k of ["bass", "treble", "octW"]) delete settings[k];             // volby ze starších verzí
+if (!settings.meas || typeof settings.meas !== "object") settings.meas = {};
+if (!settings.tuned || typeof settings.tuned !== "object") settings.tuned = {};
+if (typeof settings.temp === "number") settings.temp = ["eq", "pyth", "just", "werck3", "kirn3", "vallotti", "young2"][settings.temp] || "eq";
+settings.temp = tempById(settings.temp)[0];
+if (!(settings.style >= 0 && settings.style < STYLES.length)) settings.style = 0;
+if (["spec", "curve", "inh"].indexOf(settings.chart) < 0) settings.chart = "spec";
+if (settings.noteMode !== "step") settings.noteMode = "auto";
+if (!(settings.wMeas >= 0 && settings.wMeas <= 1)) settings.wMeas = 0.75;
+let saveTimer = 0;
+function save() { try { localStorage.setItem("pm", JSON.stringify(settings)); } catch (e) {} }
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 1500); }
+
+// ---------- Jazyk a názvy not ----------
+const NAMESETS = {
+  de: ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B", "H"],
+  en: ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"],
+  sol: ["Do", "Do♯", "Re", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"],
+};
+const NAMES_FOR = { cs: "de", sk: "de", pl: "de", de: "de", uk: "de", ru: "de", fr: "sol", es: "sol", it: "sol", pt: "sol" };
+const COMMA = new Set(["cs", "sk", "pl", "de", "fr", "es", "it", "pt", "nl", "uk", "ru"]);
+if (settings.names && !NAMESETS[settings.names]) settings.names = null;
+if (settings.lang && !I18N[settings.lang]) settings.lang = null;
+function pickLang() {
+  if (settings.lang && I18N[settings.lang]) return settings.lang;
+  const nav = typeof navigator !== "undefined" ? navigator : {};
+  const list = nav.languages && nav.languages.length ? nav.languages : [nav.language || "en"];
+  for (const l of list) { const p = String(l).toLowerCase().split("-")[0]; if (I18N[p]) return p; }
+  return "en";
+}
+let LANG = pickLang(), T = I18N[LANG];
+function tr(k, v) {
+  let s = T[k] ?? I18N.en[k] ?? k;
+  if (v) s = s.replace(/\{(\w+)\}/g, (_, x) => v[x] ?? "");
+  return s;
+}
+const nameSet = () => NAMESETS[settings.names] || NAMESETS[NAMES_FOR[LANG] || "en"];
+const noteName = m => nameSet()[((m % 12) + 12) % 12];
+const noteLabel = m => noteName(m) + (Math.floor(m / 12) - 1);
+const fmt = (v, d) => { const s = v.toFixed(d).replace("-", "−"); return COMMA.has(LANG) ? s.replace(".", ",") : s; };
+const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
+const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+function fmtB(B) {
+  const e = Math.floor(Math.log10(B));
+  return fmt(B / Math.pow(10, e), 1) + "·10" + String(e).replace("-", "⁻").replace(/\d/g, d => SUP[d]);
+}
+const cfn = (n, B) => Math.sqrt((1 + B * n * n) / (1 + B));   // poměr n-tého parciálu k n·f1 při inharmonicitě B
+
+// ---------- Inharmonicita celého klavíru ----------
+// Model: log10 B(m) = log10(10^(a + (m − 60)/s) + 10^(b − (m − 36)/t)). První člen roste do výšek, druhý do basů
+// (vinuté struny). Bez měření platí typické pianino, z měření se parametry dopočítají. Pro změřené noty se vlastní
+// měření míchá s křivkou podle váhy (výchozí 0,75, níž = hladší křivka).
+const BPRIOR = [Math.log10(4e-4), 32, Math.log10(1.5e-4), 24], BSIG = [0.35, 8, 0.45, 8];
+const bLog = (p, m) => Math.log10(Math.pow(10, p[0] + (m - 60) / p[1]) + Math.pow(10, p[2] - (m - 36) / p[3]));
+let bParams = null, bCache = null, curve = null, chartDirty = true;
+function invalidate() { bParams = null; bCache = null; curve = null; chartDirty = true; }
+function solve4(A, b) {
+  const M = A.map((r, i) => r.concat([b[i]]));
+  for (let c = 0; c < 4; c++) {
+    let piv = c;
+    for (let r = c + 1; r < 4; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (Math.abs(M[piv][c]) < 1e-14) return null;
+    const tmp = M[c]; M[c] = M[piv]; M[piv] = tmp;
+    for (let r = 0; r < 4; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= 4; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((r, i) => r[4] / r[i]);
+}
+function fitB() {
+  const pts = [];
+  for (const k in settings.meas) {
+    const e = settings.meas[k];
+    if (e && isFinite(e[0])) pts.push({ m: +k, y: e[0], s: 0.08 / Math.sqrt(Math.max(1, Math.min(e[1], 5)) / 5) });
+  }
+  let p = BPRIOR.slice();
+  if (!pts.length) return p;
+  const res = q => {
+    const r = [];
+    for (const d of pts) r.push((bLog(q, d.m) - d.y) / d.s);
+    for (let i = 0; i < 4; i++) r.push((q[i] - BPRIOR[i]) / BSIG[i]);
+    return r;
+  };
+  const cost = r => { let c = 0; for (const v of r) c += v * v; return c; };
+  const clampP = q => { q[1] = Math.max(12, Math.min(80, q[1])); q[3] = Math.max(6, Math.min(80, q[3])); return q; };
+  let r0 = res(p), c0 = cost(r0), lam = 1e-3;
+  for (let it = 0; it < 50; it++) {
+    const J = [];
+    for (let i = 0; i < 4; i++) {
+      const q = p.slice(), h = i % 2 ? 1e-2 : 1e-4; q[i] += h;
+      const r = res(q); J.push(r.map((v, j) => (v - r0[j]) / h));
+    }
+    const A = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], g = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      for (let k = 0; k < r0.length; k++) g[i] += J[i][k] * r0[k];
+      for (let j = 0; j < 4; j++) for (let k = 0; k < r0.length; k++) A[i][j] += J[i][k] * J[j][k];
+    }
+    let improved = false, gain = 0;
+    for (let tries = 0; tries < 8 && !improved; tries++) {
+      const M = A.map((row, i) => row.map((v, j) => v + (i === j ? lam * v + 1e-9 : 0)));
+      const d = solve4(M, g.map(v => -v));
+      if (!d) { lam *= 10; continue; }
+      const q = clampP(p.map((v, i) => v + d[i])), r1 = res(q), c1 = cost(r1);
+      if (c1 < c0) { gain = c0 - c1; p = q; r0 = r1; c0 = c1; lam = Math.max(1e-7, lam / 4); improved = true; }
+      else lam *= 6;
+    }
+    if (!improved || gain < 1e-8) break;
+  }
+  return p;
+}
+function bP() { return bParams || (bParams = fitB()); }
+function Buse(m) {
+  if (!bCache) {
+    bCache = new Float64Array(128);
+    const p = bP(), w = settings.wMeas;
+    for (let k = 0; k < 128; k++) {
+      const mm = Math.max(21, Math.min(108, k)), f = bLog(p, mm), e = settings.meas[mm];
+      bCache[k] = Math.pow(10, e ? (1 - w) * f + w * e[0] : f);
+    }
+  }
+  return bCache[Math.max(0, Math.min(127, Math.round(m)))];
+}
+
+// ---------- Křivka ladění (stretch) ----------
+// Jako u ladiče: nejdřív temperamentová oktáva A3–A4, pak se výšky staví nahoru od nižších not a basy dolů od
+// vyšších. Každá nota je vážený průměr toho, co od ní chtějí její intervaly (bez rázů podle inharmonicity obou not).
+// Tři průchody tam a zpět, aby i intervaly přes temperamentovou oktávu viděly hotové noty na druhé straně.
+function ivDelta(key, L, U) {        // požadovaný rozdíl odchylek horní a spodní noty v centech
+  const [s, pL, pU] = IV[key];
+  return 1200 * (Math.log2(pL / pU) - s / 12) + 1200 * (Math.log2(cfn(pL, Buse(L))) - Math.log2(cfn(pU, Buse(U))));
+}
+function ivWeight(key, base, L, U) { // slyšitelnost: velmi hluboké a velmi vysoké shody parciálů váží méně
+  const [, pL, pU] = IV[key], fc = pU * settings.refA * Math.pow(2, (U - 69) / 12);
+  let w = base * (fc * fc / (fc * fc + 6400)) / (1 + Math.pow(fc / 4500, 4));
+  if (U > 72) w *= Math.pow(1 / pL, 0.5 * Math.min(1, (U - 72) / 24));   // vysoké parciály výšek jsou slabé
+  if (key === "D41" && U >= 88) w *= 2;                                     // dvojité oktávy jsou nahoře nejslyšitelnější
+  if (key === "O63") w *= Math.min(1, Math.max(0, (52 - L) / 16));          // basové oktávy až pod C3
+  if (key === "O84" || key === "O105") w *= Math.min(1, Math.max(0, (42 - L) / 12));
+  return w;
+}
+function computeCurve() {
+  const S = new Float64Array(128), known = new Uint8Array(128), st = STYLES[settings.style] || STYLES[0];
+  // velikost klavíru podle inharmonicity kolem A1: krátká menzura (vysoké B) → 1, dlouhá (nízké B) → 0
+  const sz = Math.max(0, Math.min(1, (Math.log10(Buse(33)) + 4) / 0.9));
+  const expand = w => {
+    const o = {};
+    for (const k in w) {
+      if (k === "BASS") {
+        o.O63 = (o.O63 || 0) + w.BASS * (0.4 + 0.6 * sz);
+        o.O84 = (o.O84 || 0) + w.BASS * 0.6 * (1 - sz);
+        o.O105 = (o.O105 || 0) + w.BASS * 0.3 * (1 - sz);
+      } else o[k] = (o[k] || 0) + w[k];
+    }
+    return o;
+  };
+  const upW = expand(st.up), dnW = expand(st.down);
+  let sw = 0, sx = 0;
+  for (const k in st.t) { const w = ivWeight(k, st.t[k], 57, 69); sw += w; sx += w * -ivDelta(k, 57, 69); }
+  S[57] = sw > 0 ? sx / sw : 0;
+  for (let m = 57; m <= 69; m++) { S[m] = S[57] * (69 - m) / 12; known[m] = 1; }
+  for (let pass = 0; pass < 3; pass++) {
+    for (let m = 70; m <= 108; m++) {
+      sw = 0; sx = 0;
+      for (const k in upW) {
+        const L = m - IV[k][0];
+        if (L < 21 || !known[L]) continue;
+        const w = ivWeight(k, upW[k], L, m);
+        sw += w; sx += w * (S[L] + ivDelta(k, L, m));
+      }
+      S[m] = sw > 0 ? sx / sw : S[m - 12] + ivDelta("O21", m - 12, m); known[m] = 1;
+    }
+    for (let m = 56; m >= 21; m--) {
+      sw = 0; sx = 0;
+      for (const k in dnW) {
+        const U = m + IV[k][0];
+        if (U > 108 || !known[U]) continue;
+        const w = ivWeight(k, dnW[k], m, U);
+        sw += w; sx += w * (S[U] - ivDelta(k, m, U));
+      }
+      S[m] = sw > 0 ? sx / sw : S[m + 12] - ivDelta("O21", m, m + 12); known[m] = 1;
+    }
+  }
+  for (let pass = 0; pass < 2; pass++) {                  // jemné zahlazení švů (binomický filtr), A4 zůstává 0
+    const T = S.slice();
+    for (let m = 21; m <= 108; m++) S[m] = (T[Math.max(21, m - 1)] + 2 * T[m] + T[Math.min(108, m + 1)]) / 4;
+  }
+  const a4 = S[69];
+  for (let m = 21; m <= 108; m++) S[m] -= a4;
+  for (let m = 93; m <= 108; m++) S[m] += settings.xTreb * ((m - 92) / 16) ** 2;
+  for (let m = 21; m <= 36; m++) S[m] += settings.xBass * ((37 - m) / 16) ** 2;
+  return S;
+}
+function stretchCents(m) { return settings.stretch ? (curve || (curve = computeCurve()))[Math.max(21, Math.min(108, m))] : 0; }
+function offsetFor(midi) {
+  const pc = ((midi % 12) + 12) % 12;
+  return tempById(settings.temp)[3][(pc - settings.tonic + 12) % 12];
+}
+const tempCents = m => offsetFor(m) - offsetFor(69);
+function targetFreq(m) { return settings.refA * Math.pow(2, (m - 69) / 12 + (stretchCents(m) + tempCents(m)) / 1200); }
+
+// Název noty s hysterezí: u silně rozladěné struny (až ±70 ¢) zůstane nota stejná a nepřeskakuje na sousední
+let locked = null, sticky = null;
+let stepNote = 69, stepVote = { m: 0, n: 0 };
+function readingAt(n, f) {
+  const t = targetFreq(n);
+  return { midi: n, name: noteName(n), octave: Math.floor(n / 12) - 1,
+           cents: 1200 * Math.log2(f / t), freq: f, target: t };
+}
+function readingFor(f) {
+  let n;
+  if (sticky !== null && Math.abs(1200 * Math.log2(f / targetFreq(sticky))) < 70) n = sticky;
+  else {
+    const a = Math.round(69 + 12 * Math.log2(f / settings.refA));
+    let best = Infinity; n = a;
+    for (let k = a - 1; k <= a + 1; k++) {
+      const c = Math.abs(1200 * Math.log2(f / targetFreq(k)));
+      if (c < best) { best = c; n = k; }
+    }
+    sticky = n;
+  }
+  return readingAt(n, f);
+}
+
+// ---------- Detekce výšky tónu ----------
+// YIN: odhad periody. Vrací { f, q }, q je hloubka minima (menší = čistší tón).
+const minRms = () => 0.0003 * Math.pow(3, 3 - settings.sens);
+function yin(x, sr, minF, maxF, thr) {
+  const tauMax = Math.floor(sr / minF), tauMin = Math.max(2, Math.floor(sr / maxF)), w = x.length - tauMax;
+  if (w <= tauMax || tauMax <= tauMin + 2) return null;
+  let e = 0;
+  for (let i = 0; i < x.length; i++) e += x[i] * x[i];
+  if (Math.sqrt(e / x.length) < minRms()) return null;
+  const d = new Float64Array(tauMax + 1), c = new Float64Array(tauMax + 1);
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let s = 0;
+    for (let j = 0; j < w; j++) { const df = x[j] - x[j + tau]; s += df * df; }
+    d[tau] = s;
+  }
+  c[0] = 1;
+  let run = 0;
+  for (let tau = 1; tau <= tauMax; tau++) { run += d[tau]; c[tau] = run > 0 ? d[tau] * tau / run : 1; }
+  let found = -1;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (c[tau] < thr) { while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++; found = tau; break; }
+  }
+  if (found < 0) {                    // záloha: nejhlubší výrazné minimum
+    let g = tauMin;
+    for (let i = tauMin; i < tauMax; i++) if (c[i] < c[g]) g = i;
+    const lim = c[g] * 1.15;
+    for (let i = tauMin + 1; i < tauMax; i++) if (c[i] < lim && c[i] <= c[i - 1] && c[i] <= c[i + 1]) { g = i; break; }
+    if (!(c[g] < thr + 0.15 + 0.05 * (settings.sens - 3)) || g < 2) return null;
+    found = g;
+  }
+  if (found < 1 || found >= tauMax) return null;
+  const s0 = c[found - 1], s1 = c[found], s2 = c[found + 1], den = s0 - 2 * s1 + s2;
+  const shift = den !== 0 ? Math.max(-1, Math.min(1, 0.5 * (s0 - s2) / den)) : 0;
+  return { f: sr / (found + shift), q: s1 };
+}
+
+// Hrubý odhad pro basy: podvzorkování 48 → 12 → 3 kHz a dolní propust 4. řádu. YIN pak vidí jen nejnižší
+// parciály; ty vyšší jsou kvůli inharmonicitě rozladěné, průběh se perioda od periody mění a YIN by selhal.
+const LPF = (() => {
+  const N = 33, fc = 0.09, h = new Float64Array(N); let s = 0;
+  for (let k = 0; k < N; k++) {
+    const m = k - (N - 1) / 2, sinc = m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m);
+    h[k] = sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * k / (N - 1))); s += h[k];
+  }
+  for (let k = 0; k < N; k++) h[k] /= s;
+  return h;
+})();
+const decBufs = [null, null, null];
+function decimate(x, k) {
+  const N = LPF.length, out = Math.floor((x.length - N) / 4) + 1;
+  let y = decBufs[k];
+  if (!y || y.length !== out) y = decBufs[k] = new Float32Array(out);
+  for (let i = 0; i < out; i++) {
+    let s = 0; const o = i * 4;
+    for (let k2 = 0; k2 < N; k2++) s += x[o + k2] * LPF[k2];
+    y[i] = s;
+  }
+  return y;
+}
+let lpBuf = null;
+function lowpass(x, fs, fc) {                 // Butterworth 2. řádu, dvakrát za sebou
+  if (!lpBuf || lpBuf.length !== x.length) lpBuf = new Float32Array(x.length);
+  const w0 = 2 * Math.PI * fc / fs, cw = Math.cos(w0), al = Math.sin(w0) / Math.SQRT2, a0 = 1 + al;
+  const b0 = (1 - cw) / 2 / a0, b1 = (1 - cw) / a0, a1 = -2 * cw / a0, a2 = (1 - al) / a0;
+  let src = x;
+  for (let pass = 0; pass < 2; pass++) {
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < src.length; i++) {
+      const v = src[i], y = b0 * v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = v; y2 = y1; y1 = y; lpBuf[i] = y;
+    }
+    src = lpBuf;
+  }
+  return lpBuf.subarray(16);                  // bez náběhu filtru
+}
+// Basové parciály leží pod ~4 kHz: stačí signál podvzorkovaný na čtvrtinu (4× méně práce, stejné rozlišení)
+const windowedLow = x => windowed(decimate(x, 2));
+function coarse(x, sr, minF) {
+  const fs = sr / 16, y = decimate(decimate(x, 0), 1);
+  let r = yin(lowpass(y, fs, 250), fs, minF, 400, 0.2);
+  if (minF < 45 && (!r || r.f < 45)) {        // nejhlubší noty: ještě užší pásmo
+    const r2 = yin(lowpass(y, fs, 120), fs, minF, 200, 0.2);
+    if (r2) r = r2;
+  }
+  return r;
+}
+
+// Spektrální vrcholy: Hannovo okno + Goertzel na libovolné frekvenci + parabola v logaritmu
+const hannCache = new Map(), winCache = new Map();
+function windowed(x) {
+  const L = x.length;
+  let h = hannCache.get(L);
+  if (!h) { h = new Float64Array(L); for (let i = 0; i < L; i++) h[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * (i + 0.5) / L); hannCache.set(L, h); }
+  let b = winCache.get(L);
+  if (!b) { b = new Float64Array(L); winCache.set(L, b); }
+  let E = 0;
+  for (let i = 0; i < L; i++) { const v = x[i] * h[i]; b[i] = v; E += v * v; }
+  return { buf: b, E };
+}
+function gPow(b, sr, f) {
+  const c = 2 * Math.cos(2 * Math.PI * f / sr);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < b.length; i++) { const s0 = b[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+  return s1 * s1 + s2 * s2 - c * s1 * s2;
+}
+// Najde výrazný vrchol v okolí ctr ± hr. Vrchol na kraji okna (soused, šum) se nepočítá.
+function peakG(b, sr, ctr, hr, minK, prom = 8) {
+  const step = sr / b.length * 0.5, k0 = Math.max(minK, Math.ceil(hr / step)), n = 2 * k0 + 1;
+  let bi = 0, bv = -1, v0 = 0, vN = 0;
+  for (let k = 0; k < n; k++) {
+    const f = ctr + (k - k0) * step;
+    if (f <= 0) continue;
+    const v = gPow(b, sr, f);
+    if (k === 0) v0 = v;
+    if (k === n - 1) vN = v;
+    if (v > bv) { bv = v; bi = k; }
+  }
+  if (bi < 2 || bi > n - 3 || bv < prom * Math.max(v0, vN)) return null;
+  let f = ctr + (bi - k0) * step, st = step * 0.5;
+  for (let it = 0; it < 2; it++) {
+    const a = Math.log(gPow(b, sr, f - st) + 1e-300), m = Math.log(gPow(b, sr, f) + 1e-300), c = Math.log(gPow(b, sr, f + st) + 1e-300);
+    const den = a - 2 * m + c;
+    if (den < 0) f += Math.max(-1, Math.min(1, 0.5 * (a - c) / den)) * st;
+    st *= 0.35;
+  }
+  return { f, p: bv };
+}
+// Středy a výšky: přesná frekvence základního tónu z krátkého okna (64 ms)
+function treble(xs, sr, y) {
+  const w = windowed(xs), bw = sr / xs.length;
+  const p = peakG(w.buf, sr, y.f, Math.max(0.035 * y.f, 2 * bw), 4);
+  if (!p || p.p < 0.002 * xs.length * w.E) return null;  // základní tón musí nést aspoň ~0,6 % energie
+  // Nechytli jsme 2. nebo 3. parciál? (při rázech unisona se základ na chvíli skoro vyruší)
+  for (const k of [2, 3]) {
+    const g = p.f / k;
+    if (g < 150) break;
+    const mg = Math.round(69 + 12 * Math.log2(g / settings.refA)), B = Buse(mg);
+    const ctr = p.f / (k * cfn(k, B));
+    const q = peakG(w.buf, sr, ctr, Math.max(0.02 * ctr, 2 * bw), 3, 4);
+    if (q && q.p > 0.005 * p.p) return q.f;
+  }
+  return p.f;
+}
+const isHarmonic = (fh, fl) => { const k = Math.round(fh / fl); return k >= 2 && Math.abs(fh / (k * fl) - 1) < 0.04; };
+// Leží ve spektru i parciály noty o oktávu (d = 2) nebo duodecimu (d = 3) níž, které f nemá?
+// Pak hrubý odhad chytil vyšší parciál a skutečný základ je f/d.
+function subharm(b, sr, f, d) {
+  const g = f / d, bw = sr / b.length;
+  for (const k of d === 2 ? [3, 5] : [2, 4]) {
+    const ctr = k * g * Math.sqrt(1 + 5e-4 * k * k);
+    if (!peakG(b, sr, ctr, Math.min(0.22 * g, Math.max(0.02 * ctr, 3 * bw)), 3)) return false;
+  }
+  return true;
+}
+// Nejvyšší inharmonicita, jaká se na klavíru v dané oblasti dá čekat (vyšší hodnota je chyba měření)
+const bMax = m => m < 36 ? 4e-3 : m < 60 ? 2.5e-3 : Math.min(0.05, 2.5e-3 * Math.pow(10, (m - 60) / 30));
+// Parciály 1..n: polohy vrcholů a model p = n·√(F·(1 + B·n²)). Model se spočítá z každé dvojice parciálů,
+// vyhraje ten, se kterým souhlasí nejvíc parciálů (do 6 ¢); z nich vážená regrese → f1 struny a B.
+const bassBmap = new Map();           // vyhlazené B basových not během ladění
+function partialFit(w, sr, fc, opt) {
+  const L = w.buf.length, bw = sr / L;
+  const m = Math.round(69 + 12 * Math.log2(fc / settings.refA)), Bhi = Math.min(bMax(m), opt.maxB);
+  const prevB = opt.useBass ? bassBmap.get(m) : undefined;
+  const Bp = Math.min(Bhi, prevB || Buse(m));
+  let pts = [];
+  for (let n = 1; n <= opt.nMax; n++) {
+    const ctr = n * fc * cfn(n, Bp);
+    if (ctr > opt.fMax) break;
+    const p = peakG(w.buf, sr, ctr, Math.min(0.42 * fc, Math.max(0.04 * ctr, 3 * bw)), 3);
+    if (p) pts.push({ n, f: p.f, p: p.p });
+  }
+  const pmax = pts.reduce((a, q) => Math.max(a, q.p), 0);
+  pts = pts.filter(q => q.p >= 1e-5 * pmax);             // parciály slabší než −50 dB jsou spíš šum
+  if (pts.length < 2) return null;
+  const dev = (q, F, B) => Math.abs(1200 * Math.log2(q.f / (q.n * Math.sqrt(F * (1 + B * q.n * q.n)))));
+  let best = null;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const a = pts[i], b = pts[j], R = ((b.f / b.n) / (a.f / a.n)) ** 2, Bx = (R - 1) / (b.n * b.n - R * a.n * a.n);
+    if (!(Bx > 1e-5 && Bx < Bhi)) continue;
+    const F = (a.f / a.n) ** 2 / (1 + Bx * a.n * a.n);
+    let cnt = 0, err = 0;
+    for (const q of pts) { const e = dev(q, F, Bx); if (e < 6) { cnt++; err += e; } }
+    if (!best || cnt > best.cnt || (cnt === best.cnt && err < best.err)) best = { cnt, err, B: Bx, F };
+  }
+  if (!best) {                                // žádná dvojice nedává rozumné B: model s odhadnutým B
+    const v = pts.map(q => (q.f / q.n) ** 2 / (1 + Bp * q.n * q.n)).sort((x, y) => x - y);
+    best = { cnt: 0, B: Bp, F: v[v.length >> 1] };
+  }
+  const use = pts.filter(q => dev(q, best.F, best.B) < 6);
+  if (use.length < 2) return null;
+  let Br = null;
+  if (use.length >= 3) {                      // vážená regrese (váha n²) jen na souhlasících parciálech
+    let Sw = 0, Sx = 0, Sy = 0, Sxx = 0, Sxy = 0;
+    for (const q of use) { const X = q.n * q.n, Y = (q.f / q.n) ** 2; Sw += X; Sx += X * X; Sy += X * Y; Sxx += X * X * X; Sxy += X * X * Y; }
+    const den = Sw * Sxx - Sx * Sx;
+    if (den > 0) {
+      const sl = (Sw * Sxy - Sx * Sy) / den, ic = (Sy - sl * Sx) / Sw;
+      if (ic > 0 && sl / ic > 1e-5 && sl / ic < Bhi) Br = sl / ic;
+    }
+  } else if (!opt.useBass && best.cnt === 2) Br = best.B;
+  let B = Bp, Bsm = null;
+  if (Br !== null) {
+    if (opt.useBass) { Bsm = prevB ? 0.8 * prevB + 0.2 * Br : Br; B = Bsm; }
+    else B = Br;
+  }
+  let sw = 0, sf = 0, pw = 0;
+  for (const q of use) { const wt = q.n * q.n; sw += wt; sf += wt * q.f / (q.n * cfn(q.n, B)); pw += q.p; }
+  return { f1: sf / sw, B, Br, Bsm, m, count: use.length, pw };
+}
+function commitFit(r) {
+  if (!r || r.Bsm === null) return;
+  if (bassBmap.size > 100) bassBmap.clear();
+  bassBmap.set(r.m, r.Bsm);
+}
+
+// ---------- Záznam zvuku a rozhodování ----------
+const RING = 16384;
+let ctx = null, stream = null, node = null, an = null, wakeLock = null, running = false, starting = false, startToken = 0, audioBlocked = false;
+let ring = new Float32Array(RING), filled = 0, fresh = 0, sinceOnset = 1e9, envSlow = 0, hpX = 0, hpY = 0, absPos = 0;
+let bassTurn = false, lastFit = null;
+// Vyšší přesnost: basy v každém snímku, z delšího úseku a z víc parciálů. Na počítači se zapne sama.
+let HI = false;
+const isDesktop = () => typeof navigator !== "undefined" && !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1);
+function updateHi() { HI = settings.hiPerf === null || settings.hiPerf === undefined ? isDesktop() : !!settings.hiPerf; }
+let hist = [], sm = null, lastGood = 0, lastR = null, lastMidi = 69, dimmed = false, lastMeasT = 0;
+let onsetFlag = false, anchor = null, guardSince = 0, tunedRun = { m: -1, n: 0 };
+let toneOn = false, tctx = null, tgain = null, tosc = [];
+
+// Měření jedné konkrétní noty (zamčeno a krokově): hledají se jen parciály kolem jejího cíle.
+// Vrací { m, f, score, fit }, null (nota nezní) nebo undefined (zatím málo dat).
+function measureNote(m, sr) {
+  const ft = targetFreq(m);
+  if (ft >= 250) {
+    const xs = ring.subarray(RING - 3072), w = windowed(xs);
+    if (Math.sqrt(w.E / (0.375 * xs.length)) < minRms()) return null;
+    const p = peakG(w.buf, sr, ft, Math.max(0.045 * ft, 2 * sr / xs.length), 4);
+    if (!p || p.p < 0.002 * xs.length * w.E) return null;
+    return { m, f: p.f, score: p.p / (xs.length * w.E), fit: null };
+  }
+  const avail = Math.min(filled, sinceOnset);
+  if (avail < (ft < 70 ? 8192 : 4096)) return undefined;
+  const L = ft < (HI ? 70 : 52) && avail >= 16384 ? 16384 : Math.min(8192, Math.floor(avail / 1024) * 1024);
+  const w = windowedLow(ring.subarray(RING - L));
+  if (Math.sqrt(w.E / (0.375 * w.buf.length)) < minRms()) return null;
+  const r = partialFit(w, sr / 4, ft, { useBass: true, nMax: HI ? (ft < 70 ? 14 : 10) : (ft < 70 ? 10 : 8), fMax: HI ? 4000 : 2500, maxB: 0.01 });
+  if (!r) return null;
+  return { m, f: r.f1, score: r.pw / (w.buf.length * w.E), fit: r };
+}
+// Zamčená nota: nic se nehádá, měří se přímo parciály zvolené noty (v basech nejspolehlivější)
+function detectLocked(sr) {
+  const ft = targetFreq(locked);
+  if (ft >= 250) { if (filled < 3072 || sinceOnset < 0.045 * sr) return undefined; }
+  else if (!HI) { bassTurn = !bassTurn; if (!bassTurn) return undefined; }
+  const r = measureNote(locked, sr);
+  if (!r) return r;
+  if (r.fit) { lastFit = r.fit; commitFit(r.fit); }
+  return r.f;
+}
+// Krokově: nota smí přejít jen na sousední půltón, a to až když tam zní zřetelně silněji tři snímky po sobě.
+// Při chromatickém ladění tak nepřeskočí o oktávu ani na náhodný šum.
+function detectStep(sr) {
+  if (filled < 3072 || sinceOnset < 0.045 * sr) return undefined;
+  if (targetFreq(stepNote) < 250 && !HI) { bassTurn = !bassTurn; if (!bassTurn) return undefined; }
+  const res = [];
+  for (const m of [stepNote, stepNote - 1, stepNote + 1]) {
+    if (m < 21 || m > 108) continue;
+    const r = measureNote(m, sr);
+    if (r === undefined) { if (m === stepNote) return undefined; continue; }
+    if (r && Math.abs(1200 * Math.log2(r.f / targetFreq(m))) < 60) res.push(r);
+  }
+  const cur = res.find(r => r.m === stepNote) || null;
+  let best = null;
+  for (const r of res) if (!best || r.score > best.score) best = r;
+  let out = cur;
+  if (best && best.m !== stepNote && (!cur || best.score > 2 * cur.score)) {
+    stepVote = stepVote.m === best.m ? { m: best.m, n: stepVote.n + 1 } : { m: best.m, n: 1 };
+    if (stepVote.n >= 3) { stepNote = best.m; stepVote = { m: 0, n: 0 }; sm = null; hist = []; out = best; }
+  } else stepVote = { m: 0, n: 0 };
+  if (!out) return null;
+  if (out.fit) { lastFit = out.fit; commitFit(out.fit); }
+  return out.f;
+}
+
+// Auto: vrací Hz, null (nic nezní) nebo undefined (tento snímek se nevyhodnocuje)
+function detect() {
+  const sr = ctx.sampleRate;
+  if (filled < 3072 || sinceOnset < 0.045 * sr) return undefined;        // přeskočit úder kladívka
+  const xs = ring.subarray(RING - 3072);
+  const sh = yin(xs, sr, 120, 4300, 0.2);
+  if (sh && sh.f >= 300 && sh.q < 0.2) return treble(xs, sr, sh);
+  if (!HI) { bassTurn = !bassTurn; if (!bassTurn) return undefined; }  // úsporně se basy počítají každý druhý snímek
+  const avail = Math.min(filled, sinceOnset);
+  if (avail < 4096) return sh && sh.f >= 200 ? treble(xs, sr, sh) : undefined;
+  const L = Math.min(8192, Math.floor(avail / 1024) * 1024);
+  const co = coarse(ring.subarray(RING - L), sr, L >= 8192 ? 25 : 45);
+  if (!co || co.f >= 200 || (sh && sh.f >= 200 && !isHarmonic(sh.f, co.f))) {
+    if (sh && sh.f >= 200) return treble(xs, sr, sh);
+    if (co && co.f >= 200) return treble(xs, sr, co);
+    return null;
+  }
+  const big = HI ? 70 : 52;                                               // pod touto frekvencí dlouhé okno 16384
+  let fc = co.f, Lb = fc < big && avail >= 16384 ? 16384 : L;
+  const srl = sr / 4;
+  let w = windowedLow(ring.subarray(RING - Lb));
+  for (let it = 0; it < 3 && fc < 280; it++) {                            // chytil hrubý odhad vyšší parciál?
+    if (fc / 2 >= 25 && subharm(w.buf, srl, fc, 2)) fc /= 2;
+    else if (fc / 3 >= 25 && subharm(w.buf, srl, fc, 3)) fc /= 3;
+    else break;
+  }
+  if (fc < big && avail >= 16384 && Lb < 16384) { Lb = 16384; w = windowedLow(ring.subarray(RING - Lb)); }
+  if (fc < 70 && Lb < 8192) return undefined;                            // nejhlubší basy: počkat na delší okno
+  const r = partialFit(w, srl, fc, { useBass: true, nMax: HI ? (fc < 70 ? 14 : fc < 140 ? 10 : 8) : (fc < 70 ? 10 : fc < 140 ? 8 : 6),
+                                    fMax: HI ? 4000 : 2500, maxB: 0.01 });
+  if (!r) return null;
+  lastFit = r; commitFit(r);
+  return r.f1;
+}
+
+// Vyhlazení: medián z 5 hodnot + exponenciální filtr; po skoku nad 20 ¢ a po novém úderu začíná znovu
+function smoothF(f) {
+  hist.push(f); if (hist.length > 5) hist.shift();
+  const med = hist.slice().sort((a, b) => a - b)[hist.length >> 1];
+  if (sm === null || Math.abs(1200 * Math.log2(f / sm)) > 20) { sm = f; hist = [f]; return f; }
+  sm *= Math.pow(med / sm, 1 - 0.92 * settings.smooth);
+  return sm;
+}
+
+function analyze(now) {
+  const sr = ctx.sampleRate, step = locked === null && settings.noteMode === "step";
+  lastFit = null;
+  let v = locked !== null ? detectLocked(sr) : step ? detectStep(sr) : detect();
+  if (v === undefined) return;
+  if (onsetFlag) { onsetFlag = false; anchor = null; guardSince = 0; }   // nový úder: může zaznít jakákoli nota
+  if (v && anchor && locked === null && !step) {
+    // Bez nového úderu nemůže tón skočit o oktávu ani jiný násobek; takový skok je chyba měření, chvíli ho ignorujeme
+    const k = v / anchor, up = Math.round(k), dn = Math.round(1 / k);
+    if ((up >= 2 && Math.abs(k / up - 1) < 0.03) || (dn >= 2 && Math.abs(k * dn - 1) < 0.03)) {
+      if (!guardSince) guardSince = now;
+      if (now - guardSince < 800) v = null;
+    } else guardSince = 0;
+  }
+  if (v) {
+    anchor = v;
+    lastGood = now; setDim(false);
+    const fs = smoothF(v);
+    const r = locked !== null ? readingAt(locked, fs) : step ? readingAt(stepNote, fs) : readingFor(fs);
+    render(r);
+    trackTuned(r);
+    strobeUpdate(r);
+    if (settings.measOn && tunedRun.m === r.midi && tunedRun.n >= 6 && Math.abs(r.cents) < 50) measure(v);
+  } else {
+    strobeUpdate(null);
+    const dt = now - lastGood;
+    if (dt > settings.hold * 1000) { if (lastR) { render(null); sm = null; hist = []; } }
+    else if (dt > 500) setDim(true);
+  }
+}
+
+// Body v grafu křivky: poslední ustálená odchylka každé noty
+function trackTuned(r) {
+  tunedRun = r.midi === tunedRun.m ? { m: r.midi, n: tunedRun.n + 1 } : { m: r.midi, n: 1 };
+  if (tunedRun.n < 6 || Math.abs(r.cents) > 50 || r.midi < 21 || r.midi > 108) return;
+  const v = Math.round(r.cents * 10) / 10;
+  if (settings.tuned[r.midi] !== v) { settings.tuned[r.midi] = v; saveSoon(); if (settings.chart === "curve") chartDirty = true; }
+}
+
+// Měření inharmonicity (nejvýš 5× za sekundu, s vyšší přesností 10×)
+function measure(v) {
+  const now = performance.now();
+  if (now - lastMeasT < (HI ? 100 : 200)) return;
+  lastMeasT = now;
+  let fit = lastFit;
+  if (!fit) {
+    if (v < 200 || Math.min(filled, sinceOnset) < 8192) return;
+    const sr = ctx.sampleRate;
+    fit = partialFit(windowed(ring.subarray(RING - 8192)), sr, v, { useBass: false, nMax: 8, fMax: Math.min(10000, 0.45 * sr), maxB: 0.04 });
+    if (!fit || fit.count < (v > 1500 ? 2 : 3)) return;
+  }
+  if (fit.Br !== null) recordB(fit.m, fit.Br);
+}
+function recordB(m, B) {
+  if (m < 21 || m > 108) return;
+  const lb = Math.log10(B), e = settings.meas[m];
+  settings.meas[m] = e ? [e[0] + (lb - e[0]) * Math.max(1 / (e[1] + 1), 0.15), e[1] + 1] : [lb, 1];
+  invalidate(); saveSoon(); syncMC(m, B);
+}
+
+// ---------- Stroboskop parciálů ----------
+// Každý kotouč patří jednomu parciálu. Měří se skutečná fáze parciálu proti referenčnímu kmitočtu jeho cíle
+// (s inharmonicitou), takže kotouč stojí, když parciál sedí, a pomalu se stáčí i při desetinách centu.
+// Doprava = vysoko, doleva = nízko. Rychlost: 20 °/s na každý cent.
+const STROBE_DEG = 20, KCENT = Math.pow(2, 1 / 1200) - 1;
+const strobeState = { m: -1, parts: [], live: false };
+function phaseAt(b, sr, f, t0) {      // fáze složky f vztažená k absolutnímu času (vzorek t0 = začátek okna)
+  const w = 2 * Math.PI * f / sr, cr = Math.cos(w), ci = Math.sin(w);
+  let pr = 1, pi = 0, re = 0, im = 0;
+  for (let i = 0; i < b.length; i++) {
+    re += b[i] * pr; im -= b[i] * pi;
+    const t = pr * cr - pi * ci; pi = pr * ci + pi * cr; pr = t;
+  }
+  const a = -2 * Math.PI * ((f * t0 / sr) % 1), ca = Math.cos(a), sa = Math.sin(a);
+  return Math.atan2(re * sa + im * ca, re * ca - im * sa);
+}
+function pickPartials(f1, B, sr) {    // až tři nejsilnější parciály (1.–8.) do 4,5 kHz
+  const cand = [];
+  for (let n = 1; n <= 8; n++) {
+    const f = n * f1 * cfn(n, B);
+    if (f > 4500 || f > 0.45 * sr) break;
+    const L = f < 250 ? 8192 : 3072;
+    if (Math.min(filled, sinceOnset) < L) continue;
+    const w = windowed(ring.subarray(RING - L));
+    cand.push({ n, p: gPow(w.buf, sr, f) / (L * w.E + 1e-30) });
+  }
+  const top = cand.reduce((a, c) => Math.max(a, c.p), 0);
+  return cand.filter(c => c.p > 1e-3 * top).sort((a, b) => b.p - a.p).slice(0, 3).map(c => c.n).sort((a, b) => a - b);
+}
+function strobeUpdate(r) {
+  const st = strobeState;
+  if (!settings.strobe || !ctx) return;
+  if (!r || Math.abs(r.cents) > 15) { st.live = false; for (const p of st.parts) { p.on = false; p.ph = null; } return; }
+  const sr = ctx.sampleRate, B = lastFit && lastFit.m === r.midi && lastFit.B ? lastFit.B : Buse(r.midi);
+  if (r.midi !== st.m || !st.parts.length) {
+    const ns = pickPartials(r.freq, B, sr);
+    if (!ns.length) return;
+    st.m = r.midi; st.parts = ns.map(n => ({ n, ph: null, t0: 0, fref: 0, ang: 0, on: false }));
+  }
+  st.live = true;
+  const meas = [], wins = {};
+  let pmax = 0;
+  for (const p of st.parts) {
+    const c = cfn(p.n, B), fref = p.n * r.target * c, fm = p.n * r.freq * c, L = fref < 250 ? 8192 : 3072;
+    if (Math.min(filled, sinceOnset) < L || fref > 0.45 * sr) { p.on = false; p.ph = null; continue; }
+    const w = wins[L] || (wins[L] = windowed(ring.subarray(RING - L))), bin = sr / L, t0 = absPos - L;
+    const pk = gPow(w.buf, sr, fm), side = Math.max(gPow(w.buf, sr, fm - 2.5 * bin), gPow(w.buf, sr, fm + 2.5 * bin));
+    meas.push({ p, pk, side, ph: phaseAt(w.buf, sr, fref, t0), t0, fref, LE: L * w.E, wb: w.buf });
+    pmax = Math.max(pmax, pk);
+  }
+  for (const q of meas) {
+    const p = q.p;
+    if (!(q.pk > 10 * q.side && q.pk > 1e-4 * pmax && q.pk > 5e-4 * q.LE)) { p.on = false; p.ph = null; continue; }
+    if (p.ph !== null && q.t0 > p.t0) {
+      // posunul se cíl (nové měření inharmonicity)? fázi tohoto snímku změříme ještě proti starému cíli
+      const same = Math.abs(q.fref - p.fref) < 1e-6 * q.fref, f0 = same ? q.fref : p.fref;
+      let d = (same ? q.ph : phaseAt(q.wb, sr, p.fref, q.t0)) - p.ph;
+      d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+      p.ang = (p.ang + Math.max(-25, Math.min(25, d / (2 * Math.PI * f0 * KCENT) * STROBE_DEG))) % 360;
+    }
+    p.ph = q.ph; p.t0 = q.t0; p.fref = q.fref; p.on = true;
+  }
+}
+
+// Zvukový vstup: AudioWorklet (bez výpadků), jinak ScriptProcessor
+const WORKLET_SRC = "class C extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(512);this.n=0}" +
+  "process(i){const c=i[0]&&i[0][0];if(c){for(let k=0;k<c.length;k++){this.b[this.n++]=c[k];if(this.n===512){" +
+  "this.port.postMessage(this.b,[this.b.buffer]);this.b=new Float32Array(512);this.n=0}}}return true}}registerProcessor('pm-cap',C);";
+
+function onAudio(chunk) {
+  if (!running || !ctx || toneOn) return;
+  const sr = ctx.sampleRate, n = chunk.length, R = 1 - 2 * Math.PI * 15 / sr;
+  ring.copyWithin(0, n);
+  let e = 0;
+  for (let i = 0; i < n; i++) {               // horní propust ~15 Hz odstraní dunění a ruch
+    const x = chunk[i], y = x - hpX + R * hpY; hpX = x; hpY = y;
+    ring[RING - n + i] = y; e += y * y;
+  }
+  filled = Math.min(RING, filled + n); fresh += n; sinceOnset += n; absPos += n;
+  const rms = Math.sqrt(e / n);
+  if (rms > 2.5 * envSlow && rms > minRms() && sinceOnset > 0.15 * sr) { sinceOnset = 0; sm = null; hist = []; onsetFlag = true; }   // nový úder
+  envSlow += (rms - envSlow) * 0.15;
+}
+
+const inFrame = () => { try { return window.self !== window.top; } catch (e) { return true; } };
+let msgKey = "";
+function showMsg(key) { msgKey = key || ""; const m = $("msg"); if (!m) return; m.textContent = msgKey ? tr(msgKey) : ""; m.hidden = !msgKey; }
+
+// Ladička poslouchá, kdykoli je vidět; po přepnutí jinam mikrofon uvolní a po návratu ho zase zapne.
+async function start() {
+  if (starting || running) return;
+  const token = ++startToken;
+  starting = true; showMsg(""); idleLine();
+  let s;
+  try {
+    s = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+    });
+  } catch (err) {
+    starting = false;
+    if (token !== startToken) return;
+    showMsg(inFrame() ? "msgPreview" : err && err.name === "NotFoundError" ? "msgNoMic" : "msgDenied");
+    idleLine();
+    return;
+  }
+  if (token !== startToken) { s.getTracks().forEach(t => t.stop()); starting = false; return; }
+  stream = s;
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+    ctx.onstatechange = syncAudioState;
+    try { await ctx.resume(); } catch (e) {}
+    const src = ctx.createMediaStreamSource(stream);
+    an = ctx.createAnalyser(); an.fftSize = HI ? 16384 : 8192; an.smoothingTimeConstant = 0.6; src.connect(an);
+    specBuf = new Float32Array(an.frequencyBinCount);
+    const mute = ctx.createGain(); mute.gain.value = 0; mute.connect(ctx.destination);
+    node = null;
+    if (ctx.audioWorklet && typeof AudioWorkletNode === "function") {
+      try {
+        const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
+        await ctx.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        node = new AudioWorkletNode(ctx, "pm-cap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+        node.port.onmessage = ev => onAudio(ev.data);
+      } catch (e) { node = null; }
+    }
+    if (!node) {
+      node = ctx.createScriptProcessor(512, 1, 1);
+      node.onaudioprocess = ev => onAudio(ev.inputBuffer.getChannelData(0));
+    }
+    src.connect(node); node.connect(mute);
+  } catch (err) {
+    showMsg("msgAudioFail");
+    cleanup(); starting = false; idleLine(); return;
+  }
+  if (token !== startToken) { cleanup(); starting = false; return; }
+  ring.fill(0); filled = 0; fresh = 0; sinceOnset = 1e9; envSlow = 0; hpX = 0; hpY = 0; absPos = 0;
+  sm = null; hist = []; sticky = null; lastGood = 0; anchor = null; guardSince = 0; onsetFlag = false;
+  running = true; starting = false;
+  syncAudioState(); idleLine();
+  try { if (navigator.wakeLock && document.visibilityState === "visible") wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+function syncAudioState() {
+  if (!running || !ctx) return;
+  const blocked = ctx.state !== "running";
+  if (blocked !== audioBlocked) {
+    audioBlocked = blocked;
+    showMsg(blocked ? "msgTap" : "");
+    idleLine();
+  }
+}
+function cleanup() {
+  if (node) {
+    try { node.disconnect(); } catch (e) {}
+    if (node.port) node.port.onmessage = null; else node.onaudioprocess = null;
+    node = null;
+  }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (ctx) { ctx.onstatechange = null; ctx.close().catch(() => {}); ctx = null; }
+  an = null;
+}
+function stop() {
+  startToken++; running = false; starting = false; audioBlocked = false; cleanup();
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  render(null); strobeUpdate(null);
+}
+function autoStart() { if (document.visibilityState !== "hidden" && !running && !starting) start(); }
+
+// Referenční tón zvolené noty
+function toneStop() {
+  if (tgain && tctx) {
+    const t = tctx.currentTime;
+    tgain.gain.cancelScheduledValues(t); tgain.gain.setTargetAtTime(0, t, 0.015);
+    tosc.forEach(o => { try { o.stop(t + 0.1); } catch (e) {} });
+  }
+  tosc = []; tgain = null;
+  if (toneOn) { toneOn = false; ring.fill(0); filled = 0; sinceOnset = 1e9; envSlow = 0; anchor = null; guardSince = 0; }
+  $("tone").classList.remove("on");
+}
+function toneStart() {
+  toneStop();
+  if (locked === null && settings.noteMode !== "step") setMode("lock", lastMidi);
+  const note = locked !== null ? locked : stepNote;
+  try {
+    tctx = tctx || new (window.AudioContext || window.webkitAudioContext)();
+    tctx.resume();
+    const f = targetFreq(note), t = tctx.currentTime;
+    tgain = tctx.createGain(); tgain.gain.setValueAtTime(0, t); tgain.gain.setTargetAtTime(0.3, t, 0.015); tgain.connect(tctx.destination);
+    [1, 2, 3].forEach((h, i) => {
+      const o = tctx.createOscillator(), hg = tctx.createGain();
+      o.frequency.value = f * h * cfn(h, Buse(note)); hg.gain.value = [1, .4, .2][i] / 1.6;
+      o.connect(hg); hg.connect(tgain); o.start(t); tosc.push(o);
+    });
+    toneOn = true; $("tone").classList.add("on");
+  } catch (e) {}
+}
+
+// Režim noty: Auto (pozná jakoukoli notu), Krokově (jen na sousední půltóny), Zamčeno (jen zvolená nota)
+function setMode(mode, note) {
+  if (mode === "lock") locked = Math.max(21, Math.min(108, note));
+  else {
+    locked = null; settings.noteMode = mode; save();
+    if (mode === "step") stepNote = Math.max(21, Math.min(108, note));
+  }
+  sticky = null; stepVote = { m: 0, n: 0 }; sm = null; hist = [];
+  syncModeBtn();
+  render(null); strobeUpdate(null);
+  if (toneOn) toneStart();
+}
+const currentNote = () => locked !== null ? locked : settings.noteMode === "step" ? stepNote : null;
+
+// ---------- Displej ----------
+const $ = id => document.getElementById(id);
+const setText = (el, s) => { if (el && el.textContent !== s) el.textContent = s; };
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function idleLine() {
+  const s = tr(running ? (audioBlocked ? "waitingTap" : "listening") : starting ? "startingMic" : "micOff");
+  setText($("freq"), s + " · " + noteLabel(69) + " = " + fmt(settings.refA, 1) + " Hz");
+}
+function render(r) {
+  lastR = r;
+  const ce = $("cents");
+  if (!r) {
+    const cn = currentNote();
+    setText($("n"), cn === null ? "–" : noteName(cn));
+    setText($("o"), cn === null ? "" : String(Math.floor(cn / 12) - 1));
+    setText(ce, "– –"); ce.classList.add("off"); ce.classList.remove("dim");
+    const nt = $("nt"); if (nt) nt.style.opacity = 1;
+    dimmed = false; dialTarget = 0; needleAlpha = 0.35; setLamp(null); idleLine();
+    return;
+  }
+  if (r.midi !== lastMidi) chartDirty = true;
+  lastMidi = r.midi;
+  setText($("n"), r.name); setText($("o"), String(r.octave));
+  ce.classList.remove("off");
+  setText(ce, (r.cents >= 0 ? "+" : "−") + fmt(Math.abs(r.cents), 1) + " ¢");
+  setText($("freq"), fmt(r.freq, 2) + " Hz → " + fmt(r.target, 2) + " Hz");
+  dialTarget = dialPos(r.cents) * 60; needleAlpha = dimmed ? 0.5 : 1; setLamp(r.cents);
+}
+function setDim(d) {
+  if (d === dimmed) return;
+  dimmed = d;
+  const nt = $("nt"); if (nt) nt.style.opacity = d ? 0.45 : 1;
+  $("cents").classList.toggle("dim", d);
+  needleAlpha = lastR ? (d ? 0.5 : 1) : 0.35;
+}
+// Kontrolka: plynulý přechod barvy podle odchylky (zelená → jantarová → červená), bez blikání
+function setLamp(c) {
+  const core = $("lampCore"), halo = $("lampHalo");
+  if (!core) return;
+  if (c === null) { core.setAttribute("fill", "#3a1d14"); halo.setAttribute("opacity", "0"); return; }
+  const x = Math.abs(c);
+  const hue = x <= 2 ? 145 - 10 * x : x <= 6 ? 125 - (x - 2) / 4 * 85 : 40 - Math.min(1, (x - 6) / 9) * 35;
+  const col = "hsl(" + hue.toFixed(0) + ", 70%, " + (x <= 2 ? 58 : 50) + "%)";
+  core.setAttribute("fill", col);
+  $("h0").setAttribute("stop-color", col); $("h1").setAttribute("stop-color", col);
+  halo.setAttribute("opacity", (x <= 2 ? 0.9 : Math.max(0.3, 0.9 - (x - 2) * 0.1)).toFixed(2));
+}
+
+// Stupnice: se zvětšeným středem zabírá 0–3 ¢ 35 % půlky oblouku, 3–10 ¢ 30 %, 10–50 ¢ 35 %
+function dialPos(c) {
+  const a = Math.min(Math.abs(c), 50);
+  if (!settings.zoom) return c < 0 ? -a / 50 : a / 50;
+  const p = a <= 3 ? a / 3 * 0.35 : a <= 10 ? 0.35 + (a - 3) / 7 * 0.30 : 0.65 + (a - 10) / 40 * 0.35;
+  return c < 0 ? -p : p;
+}
+const SCALE = {
+  zoom: { major: [3, 10, 50], mid: [1, 2, 5, 25], minor: [0.5, 1.5, 2.5, 4, 6, 7, 8, 9, 15, 20, 30, 35, 40, 45] },
+  lin:  { major: [10, 20, 30, 40, 50], mid: [5, 15, 25, 35, 45], minor: [1, 2, 3, 4, 6, 7, 8, 9] },
+};
+let dialTarget = 0, dialCur = 0, needleAlpha = 0.35, alphaCur = 0.35, needleEl = null, shadowEl = null;
+
+function gear(cx, cy, R, teeth, rot) {
+  const F = v => v.toFixed(1), r1 = R * 0.84, da = 2 * Math.PI / teeth, pts = [];
+  for (let i = 0; i < teeth; i++) {
+    const a0 = rot + i * da;
+    for (const [u, rr] of [[0, r1], [0.14, R], [0.36, R], [0.5, r1]]) {
+      const a = a0 + u * da; pts.push(F(cx + rr * Math.cos(a)) + " " + F(cy + rr * Math.sin(a)));
+    }
+  }
+  const hr = R * 0.62;
+  const hole = `M${F(cx + hr)} ${F(cy)}A${F(hr)} ${F(hr)} 0 1 0 ${F(cx - hr)} ${F(cy)}A${F(hr)} ${F(hr)} 0 1 0 ${F(cx + hr)} ${F(cy)}Z`;
+  let s = `<path d="M${pts.join("L")}Z${hole}" fill="url(#gGear)" fill-rule="evenodd" stroke="#2b1a08" stroke-width="1"/>`;
+  for (let k = 0; k < 4; k++) {
+    const a = rot + 0.3 + k * Math.PI / 2;
+    s += `<line x1="${F(cx)}" y1="${F(cy)}" x2="${F(cx + (hr + 1) * Math.cos(a))}" y2="${F(cy + (hr + 1) * Math.sin(a))}" stroke="#6d4c1b" stroke-width="${F(R * 0.13)}"/>`;
+  }
+  s += `<circle cx="${F(cx)}" cy="${F(cy)}" r="${F(R * 0.2)}" fill="url(#gGear)" stroke="#2b1a08" stroke-width="1"/><circle cx="${F(cx)}" cy="${F(cy)}" r="${F(R * 0.07)}" fill="#1b1006"/>`;
+  return s;
+}
+
+function buildDial() {
+  const D = Math.PI / 180, F = v => v.toFixed(1);
+  const pt = (deg, r) => [r * Math.sin(deg * D), -r * Math.cos(deg * D)];
+  const arc = (d1, d2, r) => { const a = pt(d1, r), b = pt(d2, r); return `M${F(a[0])} ${F(a[1])}A${r} ${r} 0 0 1 ${F(b[0])} ${F(b[1])}`; };
+  let s = `<defs>
+    <linearGradient id="gBezel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbe6a6"/><stop offset=".3" stop-color="#d1a44c"/><stop offset=".55" stop-color="#8f6421"/><stop offset=".8" stop-color="#d9b062"/><stop offset="1" stop-color="#6e4a17"/></linearGradient>
+    <linearGradient id="gLip" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f0cf85"/><stop offset=".5" stop-color="#9a6d25"/><stop offset="1" stop-color="#5b3c10"/></linearGradient>
+    <linearGradient id="gGear" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9c7531"/><stop offset="1" stop-color="#4a3210"/></linearGradient>
+    <radialGradient id="gFace" cx="0" cy="-40" r="190" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6ecd2"/><stop offset=".6" stop-color="#ead8ae"/><stop offset="1" stop-color="#c7a974"/></radialGradient>
+    <radialGradient id="gVig" cx="0" cy="0" r="151" gradientUnits="userSpaceOnUse"><stop offset=".72" stop-color="#5a3a12" stop-opacity="0"/><stop offset="1" stop-color="#5a3a12" stop-opacity=".38"/></radialGradient>
+    <radialGradient id="gRivet" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff4cc"/><stop offset=".45" stop-color="#c9973f"/><stop offset="1" stop-color="#4f340c"/></radialGradient>
+    <radialGradient id="gCap" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff1c2"/><stop offset=".45" stop-color="#cf9e48"/><stop offset="1" stop-color="#5e3e10"/></radialGradient>
+    <linearGradient id="gSteel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#14223f"/><stop offset=".45" stop-color="#4b70b0"/><stop offset=".6" stop-color="#2c4a85"/><stop offset="1" stop-color="#0e1730"/></linearGradient>
+    <linearGradient id="gGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="gHalo"><stop id="h0" offset="0" stop-color="#63a88c" stop-opacity=".9"/><stop id="h1" offset="1" stop-color="#63a88c" stop-opacity="0"/></radialGradient>
+    <clipPath id="faceClip"><circle r="151"/></clipPath>
+    <path id="insc" d="M${F(-0.866 * 139)} ${F(0.5 * 139)}A139 139 0 0 0 ${F(0.866 * 139)} ${F(0.5 * 139)}" fill="none"/>
+  </defs>`;
+  // ozubená kola za lunetou
+  s += gear(-140, -140, 38, 13, 0.2) + gear(138, -138, 30, 10, 0.5);
+  // luneta s nýty
+  s += `<circle r="175" fill="url(#gBezel)" stroke="#2a1806" stroke-width="1.5"/>`;
+  s += `<circle r="167" fill="none" stroke="#5c3f12" stroke-width="1.2" opacity=".7"/>`;
+  for (let i = 0; i < 12; i++) {
+    const [x, y] = pt(i * 30 + 15, 167);
+    s += `<circle cx="${F(x)}" cy="${F(y)}" r="3.6" fill="url(#gRivet)" stroke="#3b2608" stroke-width=".6"/>`;
+  }
+  s += `<circle r="160" fill="url(#gLip)"/><circle r="153" fill="#1d1207"/>`;
+  s += `<circle r="151" fill="url(#gFace)"/><circle r="151" fill="url(#gVig)"/>`;
+  // barevná pásma: naladěno ±2 ¢, pozor do ±10 ¢, dál rozladěno
+  const band = (c1, c2, col, op) => `<path d="${arc(dialPos(c1) * 60, dialPos(c2) * 60, 142)}" fill="none" stroke="${col}" stroke-opacity="${op}" stroke-width="6"/>`;
+  s += band(-50, -10, "#9c3428", .75) + band(-10, -2, "#c98a2e", .6) + band(-2, 2, "#3f8a6c", .9) + band(2, 10, "#c98a2e", .6) + band(10, 50, "#9c3428", .75);
+  s += `<path d="${arc(-60, 60, 145.5)}" fill="none" stroke="#2a190b" stroke-width=".8"/>`;
+  s += `<path d="${arc(-60, 60, 136)}" fill="none" stroke="#2a190b" stroke-width="1.3"/>`;
+  // rysky a čísla
+  const sc = settings.zoom ? SCALE.zoom : SCALE.lin;
+  const tick = (c, len, wd) => { const d = dialPos(c) * 60, a = pt(d, 136), b = pt(d, 136 - len);
+    return `<line x1="${F(a[0])}" y1="${F(a[1])}" x2="${F(b[0])}" y2="${F(b[1])}" stroke="#2a190b" stroke-width="${wd}" stroke-linecap="round"/>`; };
+  const lab = (c, t) => { const [x, y] = pt(dialPos(c) * 60, 110); return `<text x="${F(x)}" y="${F(y + 5)}" text-anchor="middle" class="dl">${t}</text>`; };
+  s += tick(0, 20, 2.4) + lab(0, "0");
+  for (const g of [-1, 1]) {
+    sc.minor.forEach(c => { s += tick(g * c, 7, 0.9); });
+    sc.mid.forEach(c => { s += tick(g * c, 11, 1.3); });
+    sc.major.forEach(c => { s += tick(g * c, 16, 1.9) + lab(g * c, String(c)); });
+  }
+  const [mx, my] = pt(-69, 121), [px, py] = pt(69, 121);
+  s += `<text x="${F(mx)}" y="${F(my + 7)}" text-anchor="middle" class="ds">−</text><text x="${F(px)}" y="${F(py + 7)}" text-anchor="middle" class="ds">+</text>`;
+  // legenda, nota, kontrolka, rytina
+  s += `<text x="0" y="40" text-anchor="middle" class="de">${esc(tr("cents"))}</text>`;
+  s += `<text id="nt" x="0" y="96" text-anchor="middle" class="dn"><tspan id="n">–</tspan><tspan id="o" class="do" dx="3"></tspan></text>`;
+  s += `<circle id="lampHalo" cy="118" r="20" fill="url(#gHalo)" opacity="0"/>`;
+  s += `<circle cy="118" r="10.5" fill="url(#gBezel)" stroke="#2a1806" stroke-width=".8"/>`;
+  s += `<circle id="lampCore" cy="118" r="7.2" fill="#3a1d14"/><ellipse cx="-2.4" cy="115.2" rx="2.6" ry="1.8" fill="#fff" opacity=".55"/>`;
+  s += `<text class="de"><textPath href="#insc" startOffset="50%" text-anchor="middle">${esc(tr("appName").toLocaleUpperCase(LANG))}</textPath></text>`;
+  // ručička z modřené oceli (Breguet) se stínem
+  const hand = p => `<path d="M-2.3 3L-1 -99.6L1 -99.6L2.3 3Z" fill="${p}"/><circle cy="-106" r="5.4" fill="none" stroke="${p}" stroke-width="2.6"/>` +
+    `<path d="M-1.4 -112.2L0 -135L1.4 -112.2Z" fill="${p}"/><path d="M-2.3 0L-1.9 17.5L1.9 17.5L2.3 0Z" fill="${p}"/><circle cy="23.5" r="6.2" fill="${p}"/>`;
+  s += `<g transform="translate(2.2 3.2)"><g id="needleShadow">${hand("#000")}</g></g>`;
+  s += `<g id="needle">${hand("url(#gSteel)")}</g>`;
+  s += `<circle r="12" fill="url(#gCap)" stroke="#2a1806" stroke-width="1"/><path d="M-6.5 -3.2L6.5 3.2" stroke="#4d330b" stroke-width="2" stroke-linecap="round"/>`;
+  // sklo
+  s += `<g clip-path="url(#faceClip)"><ellipse cx="-38" cy="-78" rx="125" ry="50" transform="rotate(-24 -38 -78)" fill="url(#gGlass)"/></g>`;
+  s += `<circle r="150.5" fill="none" stroke="#000" stroke-opacity=".32" stroke-width="5"/>`;
+  $("dial").innerHTML = s;
+  needleEl = $("needle"); shadowEl = $("needleShadow");
+  placeNeedle();
+}
+function placeNeedle() {
+  if (!needleEl) return;
+  const t = "rotate(" + dialCur.toFixed(2) + ")";
+  needleEl.setAttribute("transform", t); shadowEl.setAttribute("transform", t);
+  needleEl.setAttribute("opacity", alphaCur.toFixed(3)); shadowEl.setAttribute("opacity", (alphaCur * 0.3).toFixed(3));
+}
+
+// Kotouče stroboskopu: mosazná obruba, tmavé sklo, 12 svítících příček, v náboji číslo parciálu
+let strobeEl = null;
+function canvasSetup(el) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = Math.round(el.clientWidth * dpr), H = Math.round(el.clientHeight * dpr);
+  if (!W || !H) return null;
+  if (el.width !== W || el.height !== H) { el.width = W; el.height = H; }
+  const g = el.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  return { g, W, H, dpr };
+}
+function drawStrobe() {
+  if (!strobeEl || strobeEl.hidden) return;
+  const c = canvasSetup(strobeEl);
+  if (!c) return;
+  const { g, W, H, dpr } = c, st = strobeState, N = 3;
+  const R = Math.min(H / 2 - 3 * dpr, W / (2 * N) - 12 * dpr), gap = (W - 2 * R * N) / (N + 1);
+  for (let i = 0; i < N; i++) {
+    const p = st.parts[i], cx = gap + R + i * (2 * R + gap), cy = H / 2, on = !!(st.live && p && p.on);
+    const gb = g.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+    gb.addColorStop(0, "#fbe6a6"); gb.addColorStop(0.35, "#c99a45"); gb.addColorStop(0.7, "#8a5f1f"); gb.addColorStop(1, "#d9b062");
+    g.fillStyle = gb; g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.fill();
+    g.strokeStyle = "#2a1806"; g.lineWidth = dpr; g.stroke();
+    const gg = g.createRadialGradient(cx, cy - R * 0.35, R * 0.1, cx, cy, R * 0.86);
+    gg.addColorStop(0, "#2b1608"); gg.addColorStop(1, "#060302");
+    g.fillStyle = gg; g.beginPath(); g.arc(cx, cy, R * 0.84, 0, 2 * Math.PI); g.fill();
+    g.save(); g.translate(cx, cy); g.rotate(((p && p.ang) || 0) * Math.PI / 180);
+    g.fillStyle = on ? "#ffae52" : "#3d2414";
+    if (on) { g.shadowColor = "rgba(255, 140, 40, .85)"; g.shadowBlur = 6 * dpr; }
+    for (let k = 0; k < 12; k++) { g.rotate(Math.PI / 6); g.fillRect(-R * 0.065, -R * 0.78, R * 0.13, R * 0.33); }
+    g.restore();
+    const gh = g.createRadialGradient(cx - R * 0.1, cy - R * 0.12, R * 0.02, cx, cy, R * 0.32);
+    gh.addColorStop(0, "#fff1c2"); gh.addColorStop(0.5, "#cf9e48"); gh.addColorStop(1, "#5e3e10");
+    g.fillStyle = gh; g.beginPath(); g.arc(cx, cy, R * 0.3, 0, 2 * Math.PI); g.fill();
+    g.fillStyle = on ? "#2a190b" : "rgba(42, 25, 11, .55)";
+    g.font = "700 " + Math.round(R * 0.36) + 'px "Cinzel", Georgia, serif';
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(p ? String(p.n) : "·", cx, cy + R * 0.02);
+  }
+}
+
+// ---------- Grafy: spektrum, křivka ladění, inharmonicita ----------
+let chartEl = null, specBuf = null, chartTurn = false, chartT = 0;
+const AX = "rgba(201, 161, 87, .7)", GRID = "rgba(201, 161, 87, .14)";
+function drawChart() {
+  if (!chartEl) return;
+  const c = canvasSetup(chartEl);
+  if (!c) return;
+  c.g.font = (10.5 * c.dpr) + 'px "Old Standard TT", Georgia, serif';
+  if (settings.chart === "curve") drawCurve(c);
+  else if (settings.chart === "inh") drawInh(c);
+  else drawSpec(c);
+}
+function drawSpec({ g, W, H, dpr }) {
+  const fLo = 25, fHi = 5000, lr = Math.log(fHi / fLo), X = f => Math.log(f / fLo) / lr * W;
+  g.lineWidth = 1; g.strokeStyle = "rgba(201, 161, 87, .16)"; g.fillStyle = "rgba(201, 161, 87, .6)"; g.textAlign = "left";
+  for (const [f, t] of [[50, "50 Hz"], [100, "100"], [200, "200"], [500, "500"], [1000, "1k"], [2000, "2k"], [4000, "4k"]]) {
+    const x = Math.round(X(f)) + 0.5, tw = g.measureText(t).width;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    g.fillText(t, x + 3 * dpr + tw > W - 2 * dpr ? x - 3 * dpr - tw : x + 3 * dpr, H - 5 * dpr);
+  }
+  if (!running || !an || !specBuf) return;
+  an.getFloatFrequencyData(specBuf);
+  const bw = ctx.sampleRate / an.fftSize, i0 = Math.max(1, Math.floor(fLo / bw)), i1 = Math.min(specBuf.length, Math.ceil(fHi / bw));
+  const top = 16 * dpr, Y = i => H - Math.max(0, Math.min(1, (specBuf[i] + 105) / 75)) * (H - top);
+  g.beginPath(); g.moveTo(X(i0 * bw), H);
+  for (let i = i0; i < i1; i++) g.lineTo(X(i * bw), Y(i));
+  g.lineTo(W, H); g.closePath();
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "rgba(255, 174, 82, .35)"); grad.addColorStop(1, "rgba(255, 174, 82, 0)");
+  g.fillStyle = grad; g.fill();
+  g.beginPath();
+  for (let i = i0; i < i1; i++) i === i0 ? g.moveTo(X(i * bw), Y(i)) : g.lineTo(X(i * bw), Y(i));
+  g.strokeStyle = "#ffae52"; g.lineWidth = 1.5 * dpr; g.stroke();
+  if (lastR) {                       // kde mají ležet parciály znějící noty (s inharmonicitou)
+    const B = Buse(lastR.midi), hot = new Set(strobeState.parts.filter(p => p.on).map(p => p.n));
+    g.textAlign = "center";
+    let lastX = -1e9;
+    for (let n = 1; n <= 16; n++) {
+      const f = n * lastR.freq * cfn(n, B);
+      if (f > fHi) break;
+      const x = X(f), h = hot.has(n);
+      g.strokeStyle = h ? "rgba(150, 230, 200, .9)" : "rgba(99, 168, 140, .5)"; g.lineWidth = (h ? 1.6 : 1) * dpr;
+      g.beginPath(); g.moveTo(x, top); g.lineTo(x, H * 0.45); g.stroke();
+      if (x - lastX > 12 * dpr) { g.fillStyle = h ? "#a8e6cc" : "rgba(169, 214, 196, .75)"; g.fillText(String(n), x, 11 * dpr); lastX = x; }
+    }
+  }
+}
+function keyAxis({ g, W, H, dpr }, padL, padR, padT, padB) {
+  const X = m => padL + (m - 21) / 87 * (W - padL - padR);
+  g.textAlign = "center"; g.lineWidth = 1;
+  for (const m of [21, 36, 48, 60, 72, 84, 96, 108]) {
+    const t = noteLabel(m);
+    const x = Math.round(X(m)) + 0.5;
+    g.strokeStyle = GRID; g.beginPath(); g.moveTo(x, padT); g.lineTo(x, H - padB); g.stroke();
+    g.fillStyle = AX; g.fillText(t, Math.max(padL + 7 * dpr, Math.min(W - padR - 7 * dpr, x)), H - 5 * dpr);
+  }
+  const cn = lastR ? lastR.midi : currentNote();
+  if (cn !== null && cn >= 21 && cn <= 108) {
+    const x = X(cn);
+    g.strokeStyle = "rgba(255, 174, 82, .55)"; g.lineWidth = 2 * dpr;
+    g.beginPath(); g.moveTo(x, padT); g.lineTo(x, H - padB); g.stroke();
+  }
+  return X;
+}
+function drawCurve(c) {
+  const { g, W, H, dpr } = c, padL = 30 * dpr, padR = 8 * dpr, padT = 8 * dpr, padB = 18 * dpr;
+  const S = [];
+  let lo = -5, hi = 5;
+  for (let m = 21; m <= 108; m++) {
+    S[m] = stretchCents(m); lo = Math.min(lo, S[m]); hi = Math.max(hi, S[m]);
+    const d = settings.tuned[m];
+    if (d !== undefined) { lo = Math.min(lo, S[m] + d); hi = Math.max(hi, S[m] + d); }
+  }
+  lo = Math.floor((lo - 3) / 10) * 10; hi = Math.ceil((hi + 3) / 10) * 10;
+  const Y = v => padT + (hi - v) / (hi - lo) * (H - padT - padB), step = hi - lo > 60 ? 20 : 10;
+  g.textAlign = "right"; g.lineWidth = 1;
+  for (let v = lo; v <= hi; v += step) {
+    const y = Math.round(Y(v)) + 0.5;
+    g.strokeStyle = v === 0 ? "rgba(201, 161, 87, .45)" : GRID;
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
+    g.fillStyle = AX; g.fillText(signed(v), padL - 4 * dpr, y + 3.5 * dpr);
+  }
+  const X = keyAxis(c, padL, padR, padT, padB);
+  g.beginPath();
+  for (let m = 21; m <= 108; m++) { const x = X(m), y = Y(S[m]); m === 21 ? g.moveTo(x, y) : g.lineTo(x, y); }
+  g.strokeStyle = "#ecdcb8"; g.lineWidth = 1.6 * dpr; g.stroke();
+  for (const k in settings.tuned) {
+    const m = +k;
+    if (!(m >= 21 && m <= 108)) continue;
+    const d = settings.tuned[k], a = Math.abs(d);
+    g.fillStyle = a <= 1 ? "#6fc9a2" : a <= 3 ? "#e0a54a" : "#d0604c";
+    g.beginPath(); g.arc(X(m), Y(S[m] + d), 2.7 * dpr, 0, 2 * Math.PI); g.fill();
+  }
+  g.textAlign = "left"; g.fillStyle = "rgba(236, 220, 184, .8)";
+  g.fillText(settings.stretch ? tr("chartStretch", { style: tr("st" + settings.style) }) : tr("chartNoStretch"), padL + 5 * dpr, padT + 11 * dpr);
+}
+function drawInh(c) {
+  const { g, W, H, dpr } = c, padL = 38 * dpr, padR = 8 * dpr, padT = 8 * dpr, padB = 18 * dpr;
+  const lo = -4.6, hi = -1.2, Y = v => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+  g.textAlign = "right"; g.lineWidth = 1;
+  for (let e = -4; e <= -2; e++) {
+    const y = Math.round(Y(e)) + 0.5;
+    g.strokeStyle = GRID; g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
+    g.fillStyle = AX; g.fillText("10" + String(e).replace("-", "⁻").replace(/\d/g, d => SUP[d]), padL - 4 * dpr, y + 3.5 * dpr);
+  }
+  const X = keyAxis(c, padL, padR, padT, padB), p = bP(), nm = Object.keys(settings.meas).length;
+  g.beginPath();
+  for (let m = 21; m <= 108; m++) { const x = X(m), y = Y(bLog(p, m)); m === 21 ? g.moveTo(x, y) : g.lineTo(x, y); }
+  g.strokeStyle = "#ecdcb8"; g.lineWidth = 1.6 * dpr; g.setLineDash(nm ? [] : [5 * dpr, 4 * dpr]); g.stroke(); g.setLineDash([]);
+  for (const k in settings.meas) {
+    const m = +k, e = settings.meas[k];
+    if (!(m >= 21 && m <= 108) || !e) continue;
+    g.fillStyle = "#ffae52";
+    g.beginPath(); g.arc(X(m), Y(e[0]), (1.8 + Math.min(e[1], 8) * 0.25) * dpr, 0, 2 * Math.PI); g.fill();
+  }
+  g.textAlign = "left"; g.fillStyle = "rgba(236, 220, 184, .8)";
+  g.fillText(nm ? tr("chartInhN", { n: nm }) : tr("chartInh0"), padL + 5 * dpr, padT + 11 * dpr);
+}
+
+function tick(now) {
+  if (running && !toneOn && fresh >= 480) { fresh = 0; analyze(now); }
+  if (Math.abs(dialTarget - dialCur) > 0.005 || Math.abs(needleAlpha - alphaCur) > 0.005) {
+    dialCur += (dialTarget - dialCur) * 0.6;
+    alphaCur += (needleAlpha - alphaCur) * 0.25;
+    placeNeedle();
+  }
+  if (settings.chart === "spec") { if (running && (HI || (chartTurn = !chartTurn))) drawChart(); }
+  else if (chartDirty && now - chartT > 100) { chartDirty = false; chartT = now; drawChart(); }
+  if (settings.strobe) drawStrobe();
+  requestAnimationFrame(tick);
+}
+
+function syncMC(m, B) {
+  const n = Object.keys(settings.meas).length;
+  setText($("mc"), tr("measCount", { n }));
+  setText($("mlast"), m !== undefined ? tr("mLast", { note: noteLabel(m), b: fmtB(B) }) : tr(n ? "mFit" : "mNone"));
+  syncStretch();
+}
+function syncStretch() {
+  const n = Object.keys(settings.meas).length;
+  setText($("stretchSub"), tr(!settings.stretch ? "stretchOff" : n ? "stretchMeasured" : "stretchTypical", { n }));
+  for (const id of ["rowStyle", "rowTreb", "rowBass"]) $(id).classList.toggle("muted", !settings.stretch);
+  $("style").disabled = $("xTreb").disabled = $("xBass").disabled = !settings.stretch;
+}
+function syncTuned() {
+  const n = Object.keys(settings.tuned).length;
+  setText($("tunedSub"), n ? tr("tunedN", { n }) : tr("tuned0"));
+}
+function syncHi() {
+  updateHi(); $("hiOn").checked = HI;
+  setText($("hiSub"), tr("hiSub") + (settings.hiPerf == null ? " · " + tr(HI ? "hiAuto" : "hiBattery") : ""));
+}
+function syncModeBtn() {
+  const b = $("mode"), cur = locked !== null ? "lock" : settings.noteMode;
+  if (!b) return;
+  setText(b, tr(cur === "lock" ? "modeLock" : cur === "step" ? "modeStep" : "modeAuto"));
+  b.classList.toggle("on", cur !== "auto");
+}
+function syncTabs() {
+  for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.chart === settings.chart));
+  chartEl.setAttribute("aria-label", tr({ spec: "aSpec", curve: "aCurve", inh: "aInh" }[settings.chart]));
+}
+const trimNum = (v, d) => fmt(v, d).replace(/[.,]0+$/, "");
+function syncValues() {
+  setText($("aVal"), fmt(settings.refA, 1) + " Hz");
+  setText($("xtv"), signed(settings.xTreb) + " ¢"); setText($("xbv"), signed(settings.xBass) + " ¢");
+  setText($("wmv"), fmt(settings.wMeas, 2));
+  setText($("hv"), trimNum(settings.hold, 1) + " s");
+  setText($("sv"), trimNum(settings.sens, 1));
+}
+function confirmButton(el, action) {   // mazání potvrzuje druhé klepnutí do 3 s
+  let armed = 0;
+  const disarm = () => { clearTimeout(armed); armed = 0; el.textContent = tr("del"); el.classList.remove("warn"); };
+  el.onclick = () => {
+    if (!armed) { armed = setTimeout(disarm, 3000); el.textContent = tr("sure"); el.classList.add("warn"); return; }
+    disarm(); action();
+  };
+}
+function fillSelects() {
+  const sel = (id, items, value) => {
+    const el = $(id);
+    el.textContent = "";
+    for (const [v, label] of items) el.add(new Option(label, v));
+    el.value = String(value);
+  };
+  sel("lang", LANGS, LANG);
+  sel("names", [["de", "C D … A B H"], ["en", "C D … A B♭ B"], ["sol", "Do Re … La Si"]], settings.names || NAMES_FOR[LANG] || "en");
+  sel("temp", TEMPS.map(t => [t[0], t[1] ? tr(t[1]) : t[2]]), tempById(settings.temp)[0]);
+  sel("tonic", Array.from({ length: 12 }, (_, i) => [String(i), noteName(i)]), settings.tonic);
+  sel("style", STYLES.map((st, i) => [String(i), tr("st" + i)]), settings.style);
+  $("tonic").disabled = tempById(settings.temp)[0] === "eq";
+}
+// Přepne všechny texty na zvolený jazyk (nebo jazyk zařízení) a názvy not
+function applyLang() {
+  LANG = pickLang(); T = I18N[LANG];
+  document.documentElement.lang = LANG;
+  document.title = tr("appName");
+  const at = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (at) at.setAttribute("content", tr("appShort"));
+  const mf = document.querySelector('link[rel="manifest"]');
+  if (mf) mf.setAttribute("href", "manifest-" + LANG + ".webmanifest");
+  for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = tr(el.dataset.i18n);
+  for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", tr(el.dataset.i18nAria));
+  setText($("langLbl"), tr("lang") + (LANG === "en" ? "" : " · Language"));
+  setText($("refLbl"), tr("refA", { a4: noteLabel(69) }));
+  setText($("xTrebSub"), tr("xTrebSub", { c8: noteLabel(108) }));
+  setText($("xBassSub"), tr("xBassSub", { a0: noteLabel(21) }));
+  setText($("measHint"), tr("measHint", { lo: noteLabel(21), hi: noteLabel(93), a: noteName(9), ds: noteName(3) }));
+  fillSelects(); syncValues(); syncMC(); syncTuned(); syncHi(); syncModeBtn(); syncTabs();
+  showMsg(msgKey);
+  buildDial(); render(lastR);
+  chartDirty = true; drawChart(); drawStrobe();
+}
+
+function initUI() {
+  chartEl = $("chart"); strobeEl = $("strobe");
+  updateHi();
+  applyLang();
+  $("lang").onchange = e => { settings.lang = e.target.value; save(); applyLang(); };
+  $("names").onchange = e => { settings.names = e.target.value; save(); applyLang(); };
+  const upd = () => { invalidate(); save(); syncValues(); syncStretch(); if (!lastR) idleLine(); };
+  $("temp").onchange = e => { settings.temp = e.target.value; sticky = null; $("tonic").disabled = settings.temp === "eq"; upd(); };
+  $("tonic").onchange = e => { settings.tonic = +e.target.value; sticky = null; upd(); };
+  $("style").onchange = e => { settings.style = +e.target.value; upd(); };
+  $("aMinus").onclick = () => { settings.refA = Math.max(415, settings.refA - 0.5); upd(); };
+  $("aPlus").onclick = () => { settings.refA = Math.min(466, settings.refA + 0.5); upd(); };
+  const chk = $("stretchOn"), xt = $("xTreb"), xb = $("xBass");
+  chk.checked = settings.stretch; xt.value = settings.xTreb; xb.value = settings.xBass;
+  chk.onchange = xt.oninput = xb.oninput = () => { settings.stretch = chk.checked; settings.xTreb = +xt.value; settings.xBass = +xb.value; upd(); };
+
+  const cur = () => currentNote() ?? lastMidi;
+  $("prev").onclick = () => locked === null && settings.noteMode === "step" ? setMode("step", cur() - 1) : setMode("lock", cur() - 1);
+  $("next").onclick = () => locked === null && settings.noteMode === "step" ? setMode("step", cur() + 1) : setMode("lock", cur() + 1);
+  $("mode").onclick = () => {
+    const m = locked !== null ? "lock" : settings.noteMode;
+    if (m === "auto") setMode("step", lastMidi); else if (m === "step") setMode("lock", stepNote); else setMode("auto");
+  };
+  $("tone").onclick = () => toneOn ? toneStop() : toneStart();
+  setMode(settings.noteMode, lastMidi);
+
+  const mo = $("measOn"), wm = $("wMeas");
+  mo.checked = !!settings.measOn; wm.value = settings.wMeas;
+  mo.onchange = () => { settings.measOn = mo.checked; save(); };
+  wm.oninput = () => { settings.wMeas = +wm.value; syncValues(); invalidate(); save(); };
+  confirmButton($("measReset"), () => { settings.meas = {}; bassBmap.clear(); invalidate(); save(); syncMC(); });
+  confirmButton($("tunedReset"), () => { settings.tuned = {}; chartDirty = true; save(); syncTuned(); });
+
+  const so = $("strobeOn");
+  so.checked = settings.strobe; strobeEl.hidden = !settings.strobe;
+  so.onchange = () => { settings.strobe = so.checked; strobeEl.hidden = !so.checked; save(); };
+  $("hiOn").onchange = e => { settings.hiPerf = e.target.checked; save(); syncHi(); };
+  const hd = $("hold"), smEl = $("smooth"), zo = $("zoomOn"), se = $("sens");
+  hd.value = settings.hold; smEl.value = settings.smooth; zo.checked = settings.zoom; se.value = settings.sens;
+  hd.oninput = () => { settings.hold = +hd.value; syncValues(); save(); };
+  smEl.oninput = () => { settings.smooth = +smEl.value; save(); };
+  zo.onchange = () => { settings.zoom = zo.checked; save(); buildDial(); render(lastR); };
+  se.oninput = () => { settings.sens = +se.value; syncValues(); save(); };
+  for (const b of document.querySelectorAll(".tab")) b.onclick = () => { settings.chart = b.dataset.chart; chartDirty = true; save(); syncTabs(); drawChart(); };
+
+  window.addEventListener("resize", () => { chartDirty = true; drawChart(); drawStrobe(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") { if (running || starting) stop(); }
+    else autoStart();
+  });
+  window.addEventListener("pagehide", () => { if (running || starting) stop(); });
+  window.addEventListener("pageshow", autoStart);
+  const kick = () => {
+    if (ctx && ctx.state !== "running") ctx.resume().then(syncAudioState, () => {});
+    else autoStart();
+  };
+  document.addEventListener("pointerdown", kick, { passive: true });
+  document.addEventListener("keydown", kick);
+  save();
+  requestAnimationFrame(tick);
+  autoStart();
+}
+if (typeof document !== "undefined" && document.getElementById("app")) initUI();
+
+</script>
+<!-- ARTIFACT:END -->
+<script>
+// Offline: service worker si uloží aplikaci i písma, pak ladička běží i bez internetu
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>
